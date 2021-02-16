@@ -251,6 +251,27 @@ class KukaDiverseObjectEnvMod(KukaGymEnv):
 
     return self._step_continuous([dx, dy, dz, da, 0.3])
 
+  def directStep(self, action):
+      """for the direct control of the robot
+      """
+    dv = self._dv  # velocity per physics step.
+    dx = action[0]
+    dy = action[1]
+    dz = action[2]
+    da = action[3]
+    dg = action[4]
+
+    action = [dx, dy, dz, da, dg]
+
+    # Perform commanded action.
+    self._env_step += 1
+    self._kuka.applyAction(action)
+    for _ in range(self._actionRepeat):
+      p.stepSimulation()
+      if self._renders:
+        time.sleep(self._timeStep)
+    return 1
+
   def _step_continuous(self, action):
     """Applies a continuous velocity-control action.
 
