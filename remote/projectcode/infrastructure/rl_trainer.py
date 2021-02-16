@@ -7,8 +7,8 @@ import torch
 from tensorboardX import SummaryWriter
 import timeit
 from itertools import count
-from code.envs.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
-from code.infrastructure.utils import *
+from projectcode.envs.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
+from projectcode.infrastructure.utils import *
 import pybullet as p
 
 import collections
@@ -54,7 +54,7 @@ class RL_Trainer(object):
             self.eval_env = params['env_wrappers'](self.eval_env)
             self.mean_episode_reward = -float('nan')
             self.best_mean_episode_reward = -float('inf')
-        
+
         # Maximum length for episodes
         self.params['ep_len'] = self.params['ep_len'] or self.env.spec.max_episode_steps
         global MAX_VIDEO_LEN
@@ -242,7 +242,7 @@ class RL_Trainer(object):
 
     ####################################
     ####################################
-    
+
     def perform_dqn_logging(self, all_logs):
         last_log = all_logs[-1]
 
@@ -269,9 +269,9 @@ class RL_Trainer(object):
             logs["TimeSinceStart"] = time_since_start
 
         logs.update(last_log)
-        
+
         eval_paths, eval_envsteps_this_batch = utils.sample_trajectories(self.eval_env, self.agent.eval_policy, self.params['eval_batch_size'], self.params['ep_len'])
-        
+
         eval_returns = [eval_path["reward"].sum() for eval_path in eval_paths]
         eval_ep_lens = [len(eval_path["reward"]) for eval_path in eval_paths]
 
@@ -280,7 +280,7 @@ class RL_Trainer(object):
         logs["Eval_MaxReturn"] = np.max(eval_returns)
         logs["Eval_MinReturn"] = np.min(eval_returns)
         logs["Eval_AverageEpLen"] = np.mean(eval_ep_lens)
-        
+
         logs['Buffer size'] = self.agent.replay_buffer.num_in_buffer
 
         sys.stdout.flush()
@@ -367,7 +367,7 @@ class RL_Trainer(object):
         num_states = self.agent.replay_buffer.num_in_buffer - 2
         states = self.agent.replay_buffer.obs[:num_states]
         if num_states <= 0: return
-        
+
         H, xedges, yedges = np.histogram2d(states[:,0], states[:,1], range=[[0., 1.], [0., 1.]], density=True)
         plt.imshow(np.rot90(H), interpolation='bicubic')
         plt.colorbar()

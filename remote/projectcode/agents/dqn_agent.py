@@ -8,8 +8,8 @@ import torchvision.transforms as T
 
 
 from PIL import Image
-from code.infrastructure import pytorch_util as ptu
-from code.infrastructure.utils import ReplayMemory
+from projectcode.infrastructure import pytorch_util as ptu
+from projectcode.infrastructure.utils import ReplayMemory
 
 
 
@@ -17,17 +17,19 @@ from code.infrastructure.utils import ReplayMemory
 class DQNAgent(object):
     def __init__(self, env, agent_params):
 
-        if torch.cuda.is_available() and self.agent_params['use_gpu']:
-            self.device = torch.device("cuda:" + str(self.agent_params['gpu_id']))
-            print("Using GPU id {}".format(gpu_id))
-        else:
-            self.device = torch.device("cpu")
-            print("GPU not detected. Defaulting to CPU.")
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         self.env = env
         self.agent_params = agent_params
         self.params = agent_params
         self.batch_size = agent_params['batch_size']
+
+        if torch.cuda.is_available() and self.agent_params['use_gpu']:
+            self.device = torch.device("cuda:" + str(self.agent_params['gpu_id']))
+            print("Using GPU id {}".format(str(self.agent_params['gpu_id'])))
+        else:
+            self.device = torch.device("cpu")
+            print("GPU not detected. Defaulting to CPU.")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         #self.critic = DQNCritic(agent_params, self.optimizer_spec)
         #self.actor = ArgMaxPolicy(self.criticc)
@@ -147,7 +149,7 @@ class DQNAgent(object):
             At the end of this block of code, the simulator should have been
             advanced one step, and the replay buffer should contain one more transition.
             Note that self.last_obs must always point to the new latest observation.
-        """        
+        """
 
         # TODO store the latest observation ("frame") into the replay buffer
         # HINT: the replay buffer used here is `MemoryOptimizedReplayBuffer`
@@ -159,17 +161,17 @@ class DQNAgent(object):
         # TODO use epsilon greedy exploration when selecting action
         perform_random_action = TODO
         if perform_random_action:
-            # HINT: take random action 
+            # HINT: take random action
                 # with probability eps (see np.random.random())
                 # OR if your current step number (see self.t) is less that self.learning_starts
             action = TODO
         else:
             # HINT: Your actor will take in multiple previous observations ("frames") in order
-                # to deal with the partial observability of the environment. Get the most recent 
+                # to deal with the partial observability of the environment. Get the most recent
                 # `frame_history_len` observations using functionality from the replay buffer,
-                # and then use those observations as input to your actor. 
+                # and then use those observations as input to your actor.
             action = TODO
-        
+
         # TODO take a step in the environment using the action from the policy
         # HINT1: remember that self.last_obs must always point to the newest/latest observation
         # HINT2: remember the following useful function that you've seen before:
@@ -202,7 +204,7 @@ class DQNAgent(object):
                 TODO
             )
 
-            # TODO update the target network periodically 
+            # TODO update the target network periodically
             # HINT: your critic already has this functionality implemented
             if self.num_param_updates % self.target_update_freq == 0:
                 TODO

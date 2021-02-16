@@ -2,8 +2,8 @@ import os
 import time
 
 
-from code.infrastructure.rl_trainer import RL_Trainer
-from code.agents.dqn_agent import DQNAgent
+from projectcode.infrastructure.rl_trainer import RL_Trainer
+from projectcode.agents.dqn_agent import DQNAgent
 
 
 

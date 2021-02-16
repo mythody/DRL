@@ -1,4 +1,4 @@
-from cs285.infrastructure.utils import *
+from projectcode.infrastructure.utils import *
 
 
 class ReplayBuffer(object):
@@ -87,7 +87,7 @@ class ReplayBuffer(object):
 
     def sample(self, batch_size):
         return self.sample_random_data(batch_size)
-    
+
     def sample_recent_data(self, batch_size=1, concat_rew=True):
 
         if concat_rew:
