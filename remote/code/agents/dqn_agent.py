@@ -17,15 +17,17 @@ from code.infrastructure.utils import ReplayMemory
 class DQNAgent(object):
     def __init__(self, env, agent_params):
 
+        self.agent_params = agent_params
+
         if torch.cuda.is_available() and self.agent_params['use_gpu']:
             self.device = torch.device("cuda:" + str(self.agent_params['gpu_id']))
-            print("Using GPU id {}".format(gpu_id))
+            print("Using GPU id {}".format(self.agent_params['gpu_id']))
         else:
             self.device = torch.device("cpu")
             print("GPU not detected. Defaulting to CPU.")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.env = env
-        self.agent_params = agent_params
+
         self.params = agent_params
         self.batch_size = agent_params['batch_size']
 
