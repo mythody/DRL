@@ -7,8 +7,8 @@ import torch
 from tensorboardX import SummaryWriter
 import timeit
 from itertools import count
-from code.envs.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
-from code.infrastructure.utils import *
+from projectcode.envs.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
+from projectcode.infrastructure.utils import *
 import pybullet as p
 
 import collections
@@ -16,7 +16,7 @@ import collections
 
 # how many rollouts to save as videos to tensorboard
 MAX_NVIDEO = 2
-MAX_VIDEO_LEN = 40 # we overwrite this in the code below
+MAX_VIDEO_LEN = 40 # we overwrite this in the projectcode.below
 
 
 class RL_Trainer(object):

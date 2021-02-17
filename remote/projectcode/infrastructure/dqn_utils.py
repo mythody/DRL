@@ -8,7 +8,7 @@ import numpy as np
 from torch import nn
 import torch.optim as optim
 
-#from code.infrastructure.atari_wrappers import wrap_deepmind
+#from projectcode.infrastructure.atari_wrappers import wrap_deepmind
 from gym.envs.registration import register
 
 import torch
@@ -113,7 +113,7 @@ def create_atari_q_network(ob_dim, num_actions):
         nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1),
         nn.ReLU(),
         Flatten(),
-        nn.Linear(3136, 512),  # 3136 hard-coded based on img size + CNN layers
+        nn.Linear(3136, 512),  # 3136 hard-projectcode. based on img size + CNN layers
         nn.ReLU(),
         nn.Linear(512, num_actions),
     )
@@ -380,11 +380,11 @@ class MemoryOptimizedReplayBuffer(object):
         """Returns true if `batch_size` different transitions can be sampled from the buffer."""
         return batch_size + 1 <= self.num_in_buffer
 
-    def _encode_sample(self, idxes):
-        obs_batch      = np.concatenate([self._encode_observation(idx)[None] for idx in idxes], 0)
+    def _enprojectcode.sample(self, idxes):
+        obs_batch      = np.concatenate([self._enprojectcode.observation(idx)[None] for idx in idxes], 0)
         act_batch      = self.action[idxes]
         rew_batch      = self.reward[idxes]
-        next_obs_batch = np.concatenate([self._encode_observation(idx + 1)[None] for idx in idxes], 0)
+        next_obs_batch = np.concatenate([self._enprojectcode.observation(idx + 1)[None] for idx in idxes], 0)
         done_mask      = np.array([1.0 if self.done[idx] else 0.0 for idx in idxes], dtype=np.float32)
 
         return obs_batch, act_batch, rew_batch, next_obs_batch, done_mask
@@ -425,9 +425,9 @@ class MemoryOptimizedReplayBuffer(object):
         """
         assert self.can_sample(batch_size)
         idxes = sample_n_unique(lambda: random.randint(0, self.num_in_buffer - 2), batch_size)
-        return self._encode_sample(idxes)
+        return self._enprojectcode.sample(idxes)
 
-    def encode_recent_observation(self):
+    def enprojectcode.recent_observation(self):
         """Return the most recent `frame_history_len` frames.
 
         Returns
@@ -435,12 +435,12 @@ class MemoryOptimizedReplayBuffer(object):
         observation: np.array
             Array of shape (img_h, img_w, img_c * frame_history_len)
             and dtype np.uint8, where observation[:, :, i*img_c:(i+1)*img_c]
-            encodes frame at time `t - frame_history_len + i`
+            enprojectcode. frame at time `t - frame_history_len + i`
         """
         assert self.num_in_buffer > 0
-        return self._encode_observation((self.next_idx - 1) % self.size)
+        return self._enprojectcode.observation((self.next_idx - 1) % self.size)
 
-    def _encode_observation(self, idx):
+    def _enprojectcode.observation(self, idx):
         end_idx   = idx + 1 # make noninclusive
         start_idx = end_idx - self.frame_history_len
         # this checks if we are using low-dimensional observations, such as RAM
@@ -497,7 +497,7 @@ class MemoryOptimizedReplayBuffer(object):
     def store_effect(self, idx, action, reward, done):
         """Store effects of action taken after obeserving frame stored
         at index idx. The reason `store_frame` and `store_effect` is broken
-        up into two functions is so that once can call `encode_recent_observation`
+        up into two functions is so that once can call `enprojectcode.recent_observation`
         in between.
 
         Paramters

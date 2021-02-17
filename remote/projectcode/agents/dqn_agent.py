@@ -8,8 +8,8 @@ import torchvision.transforms as T
 
 
 from PIL import Image
-from code.infrastructure import pytorch_util as ptu
-from code.infrastructure.utils import ReplayMemory
+from projectcode.infrastructure import pytorch_util as ptu
+from projectcode.infrastructure.utils import ReplayMemory
 
 
 
@@ -146,7 +146,7 @@ class DQNAgent(object):
     def step_env(self):
         """
             Step the env and store the transition
-            At the end of this block of code, the simulator should have been
+            At the end of this block of projectcode. the simulator should have been
             advanced one step, and the replay buffer should contain one more transition.
             Note that self.last_obs must always point to the new latest observation.
         """        

@@ -1,9 +1,16 @@
 import os
 import time
+import sys
+
+CURR_DIR = os.path.dirname(os.path.abspath(__file__))
+PACKAGE_DIR = CURR_DIR + '/../..'
+sys.path.append(PACKAGE_DIR)
+print(PACKAGE_DIR)
 
 
-from code.infrastructure.rl_trainer import RL_Trainer
-from code.agents.dqn_agent import DQNAgent
+
+from projectcode.infrastructure.rl_trainer import RL_Trainer
+from projectcode.agents.dqn_agent import DQNAgent
 
 
 
