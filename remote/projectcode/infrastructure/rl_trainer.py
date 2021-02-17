@@ -170,7 +170,7 @@ class RL_Trainer(object):
                     writer.add_scalar('train_best_mean_reward', best_mean_reward, i_episode)
                 ten_rewards = 0
             if i_episode % 100 == 0:
-                self.eval_agent(writer)
+                self.eval_agent(writer, i_episode)
             # Update the target network, copying all weights and biases in DQN
             if i_episode % self.agent.params['TARGET_UPDATE'] == 0:
                 self.agent.target_net.load_state_dict(self.agent.policy_net.state_dict())
@@ -185,7 +185,7 @@ class RL_Trainer(object):
         env.close()
 
 
-    def eval_agent(self, writer=None, n_iter=None, collect_policy=None, eval_policy=None,
+    def eval_agent(self, writer=None, train_episode=0, n_iter=None, collect_policy=None, eval_policy=None,
                           buffer_name=None,
                           initial_expertdata=None, relabel_with_expert=False,
                           start_relabel_with_expert=1, expert_policy=None):
@@ -227,7 +227,7 @@ class RL_Trainer(object):
         mean_reward = summed_rewards/num_episodes
         print('Mean test score: {:.2f}'.format(mean_reward))
         if(writer is not None):
-            writer.add_scalar('test 100 episodes mean rewards', mean_reward, i_episode)
+            writer.add_scalar('test 100 episodes mean rewards', mean_reward, train_episode)
             writer.close()
         env.isTest = False
 
