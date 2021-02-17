@@ -95,15 +95,19 @@ def main():
 
     parser.add_argument('--save_params', action='store_true')
 
+    ## own params
+    parser.add_argument('--cam_view_option', type=int, default=0) # 0: default fixed cam, 1: cam=endeffector without rotation, 2: endeffector with rotation
+    parser.add_argument('--use_gpu', type=bool, default=True)
+    parser.add_argument('--gpu_id', type=int, default=0)
+
+
+
     args = parser.parse_args()
 
     # convert to dictionary
     params = vars(args)
     params['video_log_freq'] = -1 # This param is not used for DQN
 
-    params['cam_view_option'] = 0  # 0: default fixed cam, 1: cam=endeffector without rotation, 2: endeffector with rotation
-    params['use_gpu'] = True
-    params['gpu_id'] = 0
 
 
     ##################################
@@ -115,7 +119,7 @@ def main():
     if not (os.path.exists(data_path)):
         os.makedirs(data_path)
 
-    logdir = 'drl_grasp__' + args.exp_name + '_' + args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
+    logdir = 'drl_grasp__' + args.exp_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
     logdir = os.path.join(data_path, logdir)
     params['logdir'] = logdir
     if not(os.path.exists(logdir)):

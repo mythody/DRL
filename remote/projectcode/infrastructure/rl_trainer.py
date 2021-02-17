@@ -104,7 +104,7 @@ class RL_Trainer(object):
                           initial_expertdata=None, relabel_with_expert=False,
                           start_relabel_with_expert=1, expert_policy=None):
         num_episodes = self.agent.params['num_episodes'] #1000
-        writer = SummaryWriter()
+        writer = SummaryWriter(self.params['logdir'])
         total_rewards = []
         ten_rewards = 0
         best_mean_reward = None
