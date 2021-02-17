@@ -22,7 +22,6 @@ class Q_Trainer(object):
         self.params = params
 
         train_args = {
-            'num_episodes': 1000,
             'LEARNING_RATE': 1e-4,
             'num_agent_train_steps_per_iter': params['num_agent_train_steps_per_iter'],
             'num_critic_updates_per_agent_update': params['num_critic_updates_per_agent_update'],
@@ -99,6 +98,7 @@ def main():
     parser.add_argument('--cam_view_option', type=int, default=0) # 0: default fixed cam, 1: cam=endeffector without rotation, 2: endeffector with rotation
     parser.add_argument('--use_gpu', type=bool, default=True)
     parser.add_argument('--gpu_id', type=int, default=0)
+    parser.add_argument('--num_episodes', type=int, default=1000)
 
 
 

@@ -165,9 +165,12 @@ class RL_Trainer(object):
                     break
 
             if i_episode % 10 == 0:
-                writer.add_scalar('ten episodes average rewards', ten_rewards / 10.0, i_episode)
+                writer.add_scalar('train 10 episodes mean rewards', ten_rewards / 10.0, i_episode)
+                if(best_mean_reward is not None):
+                    writer.add_scalar('train_best_mean_reward', best_mean_reward, i_episode)
                 ten_rewards = 0
-
+            if i_episode % 100 == 0:
+                self.eval_agent(writer)
             # Update the target network, copying all weights and biases in DQN
             if i_episode % self.agent.params['TARGET_UPDATE'] == 0:
                 self.agent.target_net.load_state_dict(self.agent.policy_net.state_dict())
@@ -180,6 +183,56 @@ class RL_Trainer(object):
         print("Elapsed time: {}".format(timedelta(seconds=elapsed)))
         writer.close()
         env.close()
+
+
+    def eval_agent(self, writer=None, n_iter=None, collect_policy=None, eval_policy=None,
+                          buffer_name=None,
+                          initial_expertdata=None, relabel_with_expert=False,
+                          start_relabel_with_expert=1, expert_policy=None):
+        num_episodes = 20 #1000
+        total_rewards = []
+        summed_rewards = 0
+
+        env = self.agent.env
+        env.isTest = True
+        STACK_SIZE = self.agent.params['STACK_SIZE']
+
+        for i_episode in range(num_episodes):
+            # Initialize the environment and state
+            env.reset()
+            state = self.agent.get_screen()
+            stacked_states = collections.deque(STACK_SIZE * [state], maxlen=STACK_SIZE)
+            for t in count():
+                stacked_states_t = torch.cat(tuple(stacked_states), dim=1)
+                # Select and perform an action
+                action = self.agent.select_action(stacked_states_t, i_episode)
+                _, reward, done, _ = env.step(action.item())
+                reward = torch.tensor([reward], device=self.agent.device)
+
+                # Observe new state
+                next_state = self.agent.get_screen()
+                if not done:
+                    next_stacked_states = stacked_states
+                    next_stacked_states.append(next_state)
+
+                # Move to the next state
+                stacked_states = next_stacked_states
+
+                if done:
+                    reward = reward.cpu().numpy().item()
+                    summed_rewards += reward
+                    total_rewards.append(reward)
+                    break
+
+        mean_reward = summed_rewards/num_episodes
+        print('Mean test score: {:.2f}'.format(mean_reward))
+        if(writer is not None):
+            writer.add_scalar('test 100 episodes mean rewards', mean_reward, i_episode)
+            writer.close()
+        env.isTest = False
+
+
+
 
     ####################################
     ####################################
