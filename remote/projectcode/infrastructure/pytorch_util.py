@@ -23,7 +23,7 @@ class DQN(nn.Module):
         convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(h,8,4),4,2),3,1)
         linear_input_size = convw * convh * 64
         self.linear = nn.Linear(linear_input_size, 512)
-        self.head = nn.Linear(512, outputs)
+        self.head = nn.Linear(512, outputs) #, outputs
 
     # Called with either one element to determine next action, or a batch
     # during optimization. Returns tensor([[left0exp,right0exp]...]).
@@ -34,10 +34,25 @@ class DQN(nn.Module):
         x = F.relu(self.linear(x.view(x.size(0), -1)))
         return self.head(x)
 
+'''
+    def forward(self, observation: torch.FloatTensor):
+        # TODO: get this from Piazza
+        if self.discrete:
+            logits = self.logits_na(observation)
+            action_distribution = distributions.Categorical(logits=logits)
+            return action_distribution
+        else:
+            batch_mean = self.mean_net(observation)
+            scale_tril = torch.diag(torch.exp(self.logstd))
+            batch_dim = batch_mean.shape[0]
+            batch_scale_tril = scale_tril.repeat(batch_dim, 1, 1)
+            action_distribution = distributions.MultivariateNormal(
+                batch_mean,
+                scale_tril=batch_scale_tril,
+            )
+        return action_distribution
 
-
-
-
+'''
 
 
 

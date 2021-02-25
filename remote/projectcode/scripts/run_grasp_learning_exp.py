@@ -7,12 +7,8 @@ PACKAGE_DIR = CURR_DIR + '/../..'
 sys.path.append(PACKAGE_DIR)
 print(PACKAGE_DIR)
 
-
-
 from projectcode.infrastructure.rl_trainer import RL_Trainer
 from projectcode.agents.dqn_agent import DQNAgent
-
-
 
 
 
@@ -29,8 +25,7 @@ class Q_Trainer(object):
             'double_q': params['double_q'],
         }
 
-        env_args = {'num_timesteps': 50000,
-                    'STACK_SIZE': 5,
+        env_args = {'STACK_SIZE': 5,
                     'MEMORY_CAPACITY': 1000,
                     }
 
@@ -44,27 +39,15 @@ class Q_Trainer(object):
             'TARGET_UPDATE': 1000,
         }
 
-        self.params['obs_size'] = 40
-
         self.agent_params = {**train_args, **env_args, **params, **epsilon_greedy_args} ### argsis
-
         self.params['agent_class'] = DQNAgent
         self.params['agent_params'] = self.agent_params
-
         self.params['train_batch_size'] = params['batch_size']
-        #self.params['env_wrappers'] = self.agent_params['env_wrappers']
 
         self.rl_trainer = RL_Trainer(self.params)
 
     def run_training_loop(self):
-        self.rl_trainer.run_training_loop(self.agent_params['num_timesteps'])
-
-        '''
-            self.agent_params['num_timesteps'],
-            collect_policy = self.rl_trainer.agent.actor,
-            eval_policy = self.rl_trainer.agent.actor,
-        )
-        '''
+        self.rl_trainer.run_training_loop(self.agent_params['num_episodes'])
 
 def main():
 
@@ -75,13 +58,26 @@ def main():
         default='MsPacman-v0',
         choices=('PongNoFrameskip-v4', 'LunarLander-v3', 'MsPacman-v0')
     )
+    ###################
+    ## Here are the interesting arguments
 
-    parser.add_argument('--ep_len', type=int, default=200)
+    ## own params
+    parser.add_argument('--num_episodes', type=int, default=1000)
     parser.add_argument('--exp_name', type=str, default='todo')
+    parser.add_argument('--obs_type', type=str, default='RGB', choices=('RGB', 'depth', 'segmentation'))
+    parser.add_argument('--add_obs', type=str, default='None', choices=('None', 'JointsState', 't-steps'))
+    parser.add_argument('--cam_view_option', type=int, default=0) # 0: default fixed cam, 1: cam=endeffector without rotation, 2: endeffector with rotation
+    parser.add_argument('--obs_size', type=int, default=300)
+    #########################################################
 
-    parser.add_argument('--eval_batch_size', type=int, default=1000)
+    parser.add_argument('--use_gpu', type=bool, default=True)
+    parser.add_argument('--gpu_id', type=int, default=0)
 
+    parser.add_argument('--MaxSteps', type=int, default=15)
+    parser.add_argument('--save_params', action='store_true')
     parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--eval_batch_size', type=int, default=20)
+
     parser.add_argument('--num_agent_train_steps_per_iter', type=int, default=1)
     parser.add_argument('--num_critic_updates_per_agent_update', type=int, default=1)
     parser.add_argument('--double_q', action='store_true')
@@ -92,22 +88,11 @@ def main():
     parser.add_argument('--scalar_log_freq', type=int, default=int(1e4))
     parser.add_argument('--video_log_freq', type=int, default=-1)
 
-    parser.add_argument('--save_params', action='store_true')
-
-    ## own params
-    parser.add_argument('--cam_view_option', type=int, default=0) # 0: default fixed cam, 1: cam=endeffector without rotation, 2: endeffector with rotation
-    parser.add_argument('--use_gpu', type=bool, default=True)
-    parser.add_argument('--gpu_id', type=int, default=0)
-    parser.add_argument('--num_episodes', type=int, default=1000)
-
-
-
     args = parser.parse_args()
 
     # convert to dictionary
     params = vars(args)
     params['video_log_freq'] = -1 # This param is not used for DQN
-
 
 
     ##################################
@@ -129,8 +114,6 @@ def main():
 
     trainer = Q_Trainer(params)
     trainer.run_training_loop()
-
-
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import torchvision.transforms as T
 from PIL import Image
 from projectcode.infrastructure import pytorch_util as ptu
 from projectcode.infrastructure.utils import ReplayMemory
+from torch import distributions
 
 
 
@@ -47,22 +48,28 @@ class DQNAgent(object):
         _, _, screen_height, screen_width = init_screen.shape
 
         # Get number of actions from gym action space
-        self.n_actions = env.action_space.n
+        if(self.env._isDiscrete):
+            self.n_actions = env.action_space.n
+            print("n_actions: ", env.action_space.n)
+            print(type(env.action_space.n))
+        else:
+            self.n_actions = 5 #env.action_space.high.size
+            print("n_actions: ", env.action_space.high.size)
+            print(type(env.action_space.high.size))
 
         self.policy_net = ptu.DQN(screen_height, screen_width, self.n_actions).to(self.device)
         self.target_net = ptu.DQN(screen_height, screen_width, self.n_actions).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
+        self.logstd = torch.nn.Parameter(torch.zeros(self.n_actions, dtype=torch.float32, device=ptu.device)).to(self.device)
 
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=LEARNING_RATE)
         self.memory = ReplayMemory(self.params['MEMORY_CAPACITY'])
 
-
-
         self.eps_threshold = 0
 
-
-
+        # uniform_distribution = (r1 - r2) * torch.rand(a, b) + r2
+        # see https://stackoverflow.com/questions/44328530/how-to-get-a-uniform-distribution-in-a-range-r1-r2-in-pytorch
 
 
 
@@ -71,14 +78,18 @@ class DQNAgent(object):
         global stacked_screens
         # Returned screen requested by gym is 400x600x3, but is sometimes larger
         # such as 800x1200x3. Transpose it into torch order (CHW).
-        screen = self.env._get_observation().transpose((2, 0, 1))
+        screen = self.env._get_observation(self.params['obs_type']).transpose((2, 0, 1))
         # Convert to float, rescale, convert to torch tensor
         # (this doesn't require a copy)
 
         screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
+
+        # Add joints_state or t_steps if wanted
+
+
         screen = torch.from_numpy(screen)
         # Resize, and add a batch dimension (BCHW)
-        return self.preprocess(screen).unsqueeze(0).to(self.device)
+        return screen #self.preprocess(screen).unsqueeze(0).to(self.device)
 
     eps_threshold = 0
 

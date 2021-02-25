@@ -90,6 +90,7 @@ class KukaDiverseObjectEnv(KukaGymEnv):
     self._initial_fov = 20.
     self._near = 0.01
     self._far = 10
+    self._cam_view_option = 0
 
     if self._renders:
       self.cid = p.connect(p.SHARED_MEMORY)
@@ -118,7 +119,7 @@ class KukaDiverseObjectEnv(KukaGymEnv):
     """Environment reset called at the beginning of an episode.
     """
     # Set the camera settings.
-    self._cam_view_option = 0
+
     look = [0.23, 0.2, 0.54]
     distance = 1.
     pitch = -56 + self._cameraRandom * np.random.uniform(-3, 3)
@@ -204,12 +205,12 @@ class KukaDiverseObjectEnv(KukaGymEnv):
       cam_pos[2] += 0.00
       below_effector = copy(self._kuka.endEffectorPos)
       below_effector[2] -= 0.2
-      upvector = [np.sin(env._kuka.endEffectorAngle), np.cos(self._kuka.endEffectorAngle), 0.0]
+      upvector = [np.sin(self._kuka.endEffectorAngle), np.cos(self._kuka.endEffectorAngle), 0.0]
       com_view_matrix = p.computeViewMatrix(cam_pos, below_effector, upvector)
       self._view_matrix = com_view_matrix
       return self._view_matrix
 
-  def _get_observation(self):
+  def _get_observation(self, obs_type='RGB'):
     """Return the observation as an image.
     """
     ### if cameraArm - update its location
@@ -223,8 +224,16 @@ class KukaDiverseObjectEnv(KukaGymEnv):
                                height=self._height,
                                viewMatrix=self._view_matrix,
                                projectionMatrix=self._proj_matrix)
-    rgb = img_arr[2]
-    np_img_arr = np.reshape(rgb, (self._height, self._width, 4))
+    if(obs_type=='RGB'):
+      img = img_arr[2]
+      np_img_arr = np.reshape(img, (self._height, self._width, 4))
+    elif(obs_type=='depth'):
+      img = img_arr[3]
+      np_img_arr = np.reshape(img, (self._height, self._width, 1))
+    elif(obs_type=='segmentation'):
+      img = img_arr[4]
+      np_img_arr = np.reshape(img, (self._height, self._width, 1))
+
     return np_img_arr[:, :, :3]
 
   def step(self, action):
@@ -355,6 +364,9 @@ class KukaDiverseObjectEnv(KukaGymEnv):
       urdf_pattern = os.path.join(self._urdfRoot, 'random_urdfs/*0/*.urdf')
     else:
       urdf_pattern = os.path.join(self._urdfRoot, 'random_urdfs/*[1-9]/*.urdf')
+
+    #urdf_pattern = os.path.join(self._urdfRoot, 'random_urdfs/000/*.urdf')   #
+
     found_object_directories = glob.glob(urdf_pattern)
     total_num_objects = len(found_object_directories)
     selected_objects = np.random.choice(np.arange(total_num_objects), num_objects)

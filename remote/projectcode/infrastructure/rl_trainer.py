@@ -10,6 +10,7 @@ from itertools import count
 from projectcode.envs.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
 from projectcode.infrastructure.utils import *
 import pybullet as p
+import matplotlib.pyplot as plt
 
 import collections
 
@@ -86,7 +87,8 @@ class RL_Trainer(object):
 
         '''
         img_size = self.params['obs_size']
-        env = KukaDiverseObjectEnv(renders=False, isDiscrete=True, removeHeightHack=False, maxSteps=20, width=img_size,
+        _maxSteps = self.params['MaxSteps']
+        env = KukaDiverseObjectEnv(renders=False, isDiscrete=True, removeHeightHack=False, maxSteps=_maxSteps, width=img_size,
                                    height=img_size)
         env._cam_view_option = self.params['cam_view_option']
         env.cid = p.connect(p.DIRECT)
@@ -121,10 +123,15 @@ class RL_Trainer(object):
             env.reset()
             state = self.agent.get_screen()
             stacked_states = collections.deque(STACK_SIZE * [state], maxlen=STACK_SIZE)
+            if(i_episode==0):
+                print("check_point")
+                plt.imshow(state.reshape(self.params['obs_size'], self.params['obs_size']), interpolation='nearest')
+                plt.show()
             for t in count():
                 stacked_states_t = torch.cat(tuple(stacked_states), dim=1)
                 # Select and perform an action
                 action = self.agent.select_action(stacked_states_t, i_episode)
+                #print("action right before: ", action)
                 _, reward, done, _ = env.step(action.item())
                 reward = torch.tensor([reward], device=self.agent.device)
 
@@ -144,6 +151,7 @@ class RL_Trainer(object):
                 stacked_states = next_stacked_states
 
                 # Perform one step of the optimization (on the target network)
+                #for upts in range(50):
                 self.agent.optimize_model()
                 if done:
                     reward = reward.cpu().numpy().item()
