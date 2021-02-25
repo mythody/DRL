@@ -12,6 +12,7 @@ import distutils.dir_util
 import glob
 from pkg_resources import parse_version
 import gym
+from copy import copy
 
 
 class KukaDiverseObjectEnv(KukaGymEnv):
@@ -202,9 +203,9 @@ class KukaDiverseObjectEnv(KukaGymEnv):
 
   def _updateCameraPos_2(self):
       cam_pos = copy(self._kuka.endEffectorPos)
-      cam_pos[2] += 0.00
+      cam_pos[2] += - 0.01
       below_effector = copy(self._kuka.endEffectorPos)
-      below_effector[2] -= 0.2
+      below_effector[2] = cam_pos[2] - 0.2
       upvector = [np.sin(self._kuka.endEffectorAngle), np.cos(self._kuka.endEffectorAngle), 0.0]
       com_view_matrix = p.computeViewMatrix(cam_pos, below_effector, upvector)
       self._view_matrix = com_view_matrix
@@ -224,12 +225,13 @@ class KukaDiverseObjectEnv(KukaGymEnv):
                                height=self._height,
                                viewMatrix=self._view_matrix,
                                projectionMatrix=self._proj_matrix)
-    if(obs_type=='RGB'):
+    if(obs_type=='RGB' or obs_type=='BW'):
       img = img_arr[2]
       np_img_arr = np.reshape(img, (self._height, self._width, 4))
     elif(obs_type=='depth'):
       img = img_arr[3]
       np_img_arr = np.reshape(img, (self._height, self._width, 1))
+      np_img_arr = self._far * self._near / (self._far - (self._far - self._near) * np_img_arr)
     elif(obs_type=='segmentation'):
       img = img_arr[4]
       np_img_arr = np.reshape(img, (self._height, self._width, 1))

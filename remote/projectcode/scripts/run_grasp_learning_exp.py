@@ -25,7 +25,7 @@ class Q_Trainer(object):
             'double_q': params['double_q'],
         }
 
-        env_args = {'STACK_SIZE': 5,
+        env_args = {'STACK_SIZE': 1,
                     'MEMORY_CAPACITY': 1000,
                     }
 
@@ -64,10 +64,10 @@ def main():
     ## own params
     parser.add_argument('--num_episodes', type=int, default=1000)
     parser.add_argument('--exp_name', type=str, default='todo')
-    parser.add_argument('--obs_type', type=str, default='RGB', choices=('RGB', 'depth', 'segmentation'))
-    parser.add_argument('--add_obs', type=str, default='None', choices=('None', 'JointsState', 't-steps'))
+    parser.add_argument('--obs_type', type=str, default='BW', choices=('BW', 'RGB', 'depth', 'segmentation'))
+    parser.add_argument('--add_obs', type=str, default='t-steps', choices=('None', 'JointsState', 't-steps'))
     parser.add_argument('--cam_view_option', type=int, default=0) # 0: default fixed cam, 1: cam=endeffector without rotation, 2: endeffector with rotation
-    parser.add_argument('--obs_size', type=int, default=300)
+    parser.add_argument('--obs_size', type=int, default=600)
     #########################################################
 
     parser.add_argument('--use_gpu', type=bool, default=True)

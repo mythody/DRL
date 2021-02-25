@@ -125,8 +125,9 @@ class RL_Trainer(object):
             stacked_states = collections.deque(STACK_SIZE * [state], maxlen=STACK_SIZE)
             if(i_episode==0):
                 print("check_point")
-                plt.imshow(state.reshape(self.params['obs_size'], self.params['obs_size']), interpolation='nearest')
-                plt.show()
+                print("get_screen/state.shape: ", state.shape)
+                self.agent.display_screen(state)
+
             for t in count():
                 stacked_states_t = torch.cat(tuple(stacked_states), dim=1)
                 # Select and perform an action
@@ -172,8 +173,8 @@ class RL_Trainer(object):
                         best_mean_reward = mean_reward
                     break
 
-            if i_episode % 10 == 0:
-                writer.add_scalar('train 10 episodes mean rewards', ten_rewards / 10.0, i_episode)
+            if i_episode % 100 == 0:
+                writer.add_scalar('train 10 episodes mean rewards', ten_rewards / 100.0, i_episode)
                 if(best_mean_reward is not None):
                     writer.add_scalar('train_best_mean_reward', best_mean_reward, i_episode)
                 ten_rewards = 0
@@ -186,6 +187,7 @@ class RL_Trainer(object):
                 print('Environment solved in {:d} episodes!\tAverage Score: {:.2f}'.format(i_episode + 1, mean_reward))
                 break
 
+        self.eval_agent(writer, i_episode+1, n_test_episodes=100)
         print('Average Score: {:.2f}'.format(mean_reward))
         elapsed = timeit.default_timer() - start_time
         print("Elapsed time: {}".format(timedelta(seconds=elapsed)))
@@ -193,11 +195,10 @@ class RL_Trainer(object):
         env.close()
 
 
-    def eval_agent(self, writer=None, train_episode=0, n_iter=None, collect_policy=None, eval_policy=None,
+    def eval_agent(self, writer=None, train_episode=0, n_test_episodes=50, n_iter=None, collect_policy=None, eval_policy=None,
                           buffer_name=None,
                           initial_expertdata=None, relabel_with_expert=False,
                           start_relabel_with_expert=1, expert_policy=None):
-        num_episodes = 20 #1000
         total_rewards = []
         summed_rewards = 0
 
@@ -205,7 +206,7 @@ class RL_Trainer(object):
         env.isTest = True
         STACK_SIZE = self.agent.params['STACK_SIZE']
 
-        for i_episode in range(num_episodes):
+        for i_episode in range(n_test_episodes):
             # Initialize the environment and state
             env.reset()
             state = self.agent.get_screen()

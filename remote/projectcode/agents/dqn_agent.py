@@ -11,6 +11,7 @@ from PIL import Image
 from projectcode.infrastructure import pytorch_util as ptu
 from projectcode.infrastructure.utils import ReplayMemory
 from torch import distributions
+import matplotlib.pyplot as plt
 
 
 
@@ -37,15 +38,22 @@ class DQNAgent(object):
         img_size = self.params['obs_size']
         LEARNING_RATE = self.params['LEARNING_RATE'] #1e-4 # argsis
 
+
+
         self.preprocess = T.Compose([T.ToPILImage(),
-                            T.Grayscale(num_output_channels=1),
                             T.Resize(img_size, interpolation=Image.CUBIC),
                             T.ToTensor()])
 
-        # Get screen size so that we can initialize layers correctly based on shape
-        # returned from pybullet (48, 48, 3).
+        if(self.params['obs_type']=='BW'):
+            self.preprocess = T.Compose([T.ToPILImage(),
+                                T.Grayscale(num_output_channels=1),
+                                T.Resize(img_size, interpolation=Image.CUBIC),
+                                T.ToTensor()])
+
+         #Get screen size so that we can initialize layers correctly based on shape
+         #returned from pybullet (48, 48, 3).
         init_screen = self.get_screen()
-        _, _, screen_height, screen_width = init_screen.shape
+        _, n_channels, screen_height, screen_width = init_screen.shape
 
         # Get number of actions from gym action space
         if(self.env._isDiscrete):
@@ -57,8 +65,8 @@ class DQNAgent(object):
             print("n_actions: ", env.action_space.high.size)
             print(type(env.action_space.high.size))
 
-        self.policy_net = ptu.DQN(screen_height, screen_width, self.n_actions).to(self.device)
-        self.target_net = ptu.DQN(screen_height, screen_width, self.n_actions).to(self.device)
+        self.policy_net = ptu.DQN(n_channels, screen_height, screen_width, self.n_actions).to(self.device)
+        self.target_net = ptu.DQN(n_channels, screen_height, screen_width, self.n_actions).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
         self.logstd = torch.nn.Parameter(torch.zeros(self.n_actions, dtype=torch.float32, device=ptu.device)).to(self.device)
@@ -72,8 +80,6 @@ class DQNAgent(object):
         # see https://stackoverflow.com/questions/44328530/how-to-get-a-uniform-distribution-in-a-range-r1-r2-in-pytorch
 
 
-
-
     def get_screen(self):
         global stacked_screens
         # Returned screen requested by gym is 400x600x3, but is sometimes larger
@@ -82,14 +88,34 @@ class DQNAgent(object):
         # Convert to float, rescale, convert to torch tensor
         # (this doesn't require a copy)
 
-        screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
+        screen = np.ascontiguousarray(screen, dtype=np.float32)
+        screen = screen / 255
 
         # Add joints_state or t_steps if wanted
+        # t-steps: t_step/max_step conc. to screen.shape(dim 1,2)
+        if(self.params['add_obs']=='t-steps'):
+            curr_t = self.env._env_step
+            maxtime = self.env._maxSteps
+            curr_t_d_maxtime = curr_t / maxtime
+            t_step_tensor = curr_t_d_maxtime * np.ones((1, screen.shape[1], screen.shape[2]), dtype=np.float32)
+            screen = np.concatenate((screen, t_step_tensor))
 
 
         screen = torch.from_numpy(screen)
+        preprocessed_screen = self.preprocess(screen).unsqueeze(0).to(self.device)
         # Resize, and add a batch dimension (BCHW)
-        return screen #self.preprocess(screen).unsqueeze(0).to(self.device)
+
+
+
+        return preprocessed_screen
+
+    def display_screen(self, state):
+        #plt.imshow(state.cpu().numpy().transpose((0, 1, 2, 3)).squeeze(0).squeeze(0))
+        sqeezed_and_transposed_img = state.cpu().numpy().squeeze(0).transpose((1,2,0))
+        if(sqeezed_and_transposed_img.shape[2]==1):
+            sqeezed_and_transposed_img = sqeezed_and_transposed_img.squeeze(2)
+        plt.imshow(sqeezed_and_transposed_img)
+        plt.show()
 
     eps_threshold = 0
 
