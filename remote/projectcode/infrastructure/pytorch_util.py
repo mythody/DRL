@@ -5,6 +5,67 @@ from torch import nn
 
 import torch.nn.functional as F
 
+
+######
+## LEVINE NETWORK: Q(s,a) --> Scalar-Reward, for continuous action-space
+#################
+class qNetworkStateAndAction(nn.Module):
+    def __init__(self,h, w, num_actions):
+        super(qNetworkStateAndAction,self).__init__()
+        self.in_channels = 3
+        self.out_channels = [32,32,32]
+        self.kernel_sizes = [4,3,3]
+        self.strides = [2,2,2]
+        self.convolution = nn.Sequential(
+            nn.Conv2d(in_channels=self.in_channels, out_channels=self.out_channels[0], kernel_size=self.kernel_sizes[0], stride=self.strides[0]),
+            #nn.BatchNorm2d(out_channels[0])
+            nn.ReLU(),
+            nn.Conv2d(in_channels=self.out_channels[0], out_channels=self.out_channels[1], kernel_size=self.kernel_sizes[1], stride=self.strides[1]),
+            #nn.BatchNorm2d(out_channels[1])
+            nn.ReLU(),
+            nn.Conv2d(in_channels=self.out_channels[1], out_channels=self.out_channels[2], kernel_size=self.kernel_sizes[2], stride=self.strides[2]),
+            #nn.BatchNorm2d(out_channels[2])
+            nn.ReLU()
+        )
+        self.actionFC = nn.Sequential(
+            nn.Linear(num_actions,33),
+            nn.ReLU()
+        )
+        self.finishFC = nn.Sequential(
+            nn.Linear(1617,32),
+            nn.Linear(32,32),
+            nn.Linear(32,1)
+        )
+
+
+    def forward(self, image, action, timestep):
+        timestep=timestep.unsqueeze(1)
+        convolution_output = self.convolution(image)
+        time_tiled = torch.repeat_interleave(timestep,49,dim=0).reshape((timestep.shape[0],1,7,7))
+        state_output = torch.cat((time_tiled,convolution_output),dim=1)
+
+        action_output = self.actionFC(action).unsqueeze(2).unsqueeze(2)
+
+        state_action = torch.add(state_output,action_output)
+        state_action_flat = torch.flatten(state_action,start_dim=1)
+        q = self.finishFC(state_action_flat)
+
+        # timestep_tensor = torch.tensor([[[timestep]]])
+        # action_tensor = torch.tensor([action])
+        # convolution_output = self.convolution(image)
+        # time_tiled = torch.repeat_interleave(timestep,7,dim=0).repeat_interleave(7,dim=1)
+        # state_output = torch.cat((time_tiled,convolution_output),dim=2)
+        # action_output = self.actionFC(action_tensor).unsqueeze(0).unsqueeze(0)
+        # state_action = torch.add(state_output,action_output)
+        # q = self.finishFC(state_action)
+        return q
+
+
+
+
+####
+## DQN-on-policy: Q(s) -> V(a) network. for discrete actions. one convolution on img space.
+################
 class DQN(nn.Module):
     def __init__(self, c, h, w, outputs, STACK_SIZE=1):
         super(DQN, self).__init__()

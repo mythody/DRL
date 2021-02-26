@@ -12,11 +12,11 @@ from projectcode.infrastructure import pytorch_util as ptu
 from projectcode.infrastructure.utils import ReplayMemory
 from torch import distributions
 import matplotlib.pyplot as plt
+from projectcode.infrastructure.sac_utils import ValueNetwork, SoftQNetwork, PolicyNetwork
 
 
 
-
-class DQNAgent(object):
+class SACAgent(object):
     def __init__(self, env, agent_params):
 
         self.agent_params = agent_params
@@ -37,7 +37,6 @@ class DQNAgent(object):
         #self.actor = ArgMaxPolicy(self.criticc)
         img_size = self.params['obs_size']
         LEARNING_RATE = self.params['LEARNING_RATE'] #1e-4 # argsis
-
 
 
         self.preprocess = T.Compose([T.ToPILImage(),
@@ -65,6 +64,40 @@ class DQNAgent(object):
             print("n_actions: ", env.action_space.high.size)
             print(type(env.action_space.high.size))
 
+
+        #### Define networks, loss, lrs, optimizers for ValueNet, soft-q-net-1, soft-q-net-1, policy-net
+        hidden_dim = 512
+
+        self.value_net = ValueNetwork(state_dim, hidden_dim, activation=F.relu).to(device)
+        self.target_value_net = ValueNetwork(state_dim, hidden_dim, activation=F.relu).to(device)
+
+        self.soft_q_net1 = SoftQNetwork(state_dim, action_dim, hidden_dim, activation=F.relu).to(device)
+        self.soft_q_net2 = SoftQNetwork(state_dim, action_dim, hidden_dim, activation=F.relu).to(device)
+        self.policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim, activation=F.relu).to(device)
+
+        print('(Target) Value Network: ', self.value_net)
+        print('Soft Q Network (1,2): ', self.soft_q_net1)
+        print('Policy Network: ', self.policy_net)
+
+        for target_param, param in zip(self.target_value_net.parameters(), self.value_net.parameters()):
+            target_param.data.copy_(param.data)
+
+        self.value_criterion = nn.MSELoss()
+        self.soft_q_criterion1 = nn.MSELoss()
+        self.soft_q_criterion2 = nn.MSELoss()
+
+        value_lr = 3e-4
+        soft_q_lr = 3e-4
+        policy_lr = 3e-4
+
+        self.value_optimizer = optim.Adam(value_net.parameters(), lr=value_lr)
+        self.soft_q_optimizer1 = optim.Adam(soft_q_net1.parameters(), lr=soft_q_lr)
+        self.soft_q_optimizer2 = optim.Adam(soft_q_net2.parameters(), lr=soft_q_lr)
+        self.policy_optimizer = optim.Adam(policy_net.parameters(), lr=policy_lr)
+
+
+
+        '''
         self.policy_net = ptu.DQN(n_channels, screen_height, screen_width, self.n_actions).to(self.device)
         self.target_net = ptu.DQN(n_channels, screen_height, screen_width, self.n_actions).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
@@ -78,19 +111,13 @@ class DQNAgent(object):
 
         # uniform_distribution = (r1 - r2) * torch.rand(a, b) + r2
         # see https://stackoverflow.com/questions/44328530/how-to-get-a-uniform-distribution-in-a-range-r1-r2-in-pytorch
-
+        '''
 
     def get_screen(self):
         global stacked_screens
         # Returned screen requested by gym is 400x600x3, but is sometimes larger
         # such as 800x1200x3. Transpose it into torch order (CHW).
-        if(isinstance(self.params['obs_type'], list)):
-            screen = self.env._get_observation(self.params['obs_type'][0]).transpose((2, 0, 1))
-            for i in range(1, self.params['obs_type']):
-                screen_i = self.env._get_observation(self.params['obs_type'][i]).transpose((2, 0, 1))
-                screen = np.concatenate((screen, screen_i))
-        else:
-            screen = self.env._get_observation(self.params['obs_type']).transpose((2, 0, 1))
+        screen = self.env._get_observation(self.params['obs_type']).transpose((2, 0, 1))
         # Convert to float, rescale, convert to torch tensor
         # (this doesn't require a copy)
 
@@ -125,21 +152,19 @@ class DQNAgent(object):
 
     eps_threshold = 0
 
-    def select_action(self, state, i_episode):
-        global steps_done
-        global eps_threshold
-        sample = random.random()
-        self.eps_threshold = max(self.params['EPS_END'], self.params['EPS_START'] - i_episode / self.params['EPS_DECAY_LAST_FRAME'])
-        if sample > self.eps_threshold:
-            with torch.no_grad():
-                # t.max(1) will return largest column value of each row.
-                # second column on max result is index of where max element was
-                # found, so we pick action with the larger expected reward.
-                return self.policy_net(state).max(1)[1].view(1, 1)
-        else:
-            return torch.tensor([[random.randrange(self.n_actions)]], device=self.device, dtype=torch.long)
+    def get_action(self, state, deterministic):
+        state = torch.FloatTensor(state).unsqueeze(0).to(device)
+        mean, log_std = self.forward(state)
+        std = log_std.exp()
 
-    def optimize_model(self):
+        normal = Normal(0, 1)
+        z = normal.sample(mean.shape).to(device)
+        action = self.action_range * torch.tanh(mean + std * z)
+        action = torch.tanh(mean).detach().cpu().numpy()[0] if deterministic else action.detach().cpu().numpy()[0]
+
+        return action
+
+    def optimize_model_dqn(self):
         if len(self.memory) < self.params['BATCH_SIZE']:
             return
         transitions = self.memory.sample(self.params['BATCH_SIZE'])
@@ -183,7 +208,129 @@ class DQNAgent(object):
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
 
-        return loss
+    def optimize_model(self, reward_scale, gamma=0.99, soft_tau=1e-2):
+
+        batch_size = self.params['BATCH_SIZE']
+
+        alpha = 1.0  # trade-off between exploration (max entropy) and exploitation (max Q)
+
+        transitions = self.memory.sample(self.params['BATCH_SIZE'])
+        # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for detailed explanation). This converts batch-array of Transitions
+        # to Transition of batch-arrays.
+        batch = self.memory.Transition(*zip(*transitions))
+
+        # Compute a mask of non-final states and concatenate the batch elements (a final state would've been the one after which simulation ended)
+        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+                                                batch.next_state)), device=self.device, dtype=torch.bool)
+        non_final_next_states = torch.cat([s for s in batch.next_state
+                                           if s is not None])
+        state_batch = torch.cat(batch.state)
+        action_batch = torch.cat(batch.action)
+        reward_batch = torch.cat(batch.reward)
+        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
+        # columns of actions taken. These are the actions which would've been taken
+        # for each batch state according to policy_net
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+
+        # Compute V(s_{t+1}) for all next states.
+        # Expected values of actions for non_final_next_states are computed based
+        # on the "older" target_net; selecting their best reward with max(1)[0].
+        # This is merged based on the mask, such that we'll have either the expected
+        # state value or 0 in case the state was final.
+        next_state_values = torch.zeros(self.params['BATCH_SIZE'], device=self.device)
+
+
+
+
+
+
+        next_state_values[non_final_mask] = self.target_value_net(non_final_next_states).max(1)[0].detach()
+        # Compute the expected Q values
+        target_q_value = (next_state_values * self.params['GAMMA']) + reward_batch # expected_state_action_values =
+
+        #state = torch.FloatTensor(state).to(device)
+        #next_state = torch.FloatTensor(next_state).to(device)
+        #action = torch.FloatTensor(action).to(device)
+        #reward = torch.FloatTensor(reward).unsqueeze(1).to(
+        #    device)  # reward is single value, unsqueeze() to add one dim to be [reward] at the sample dim;
+        #done = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
+
+        predicted_q_value1 = self.soft_q_net1(state_batch, action_batch)
+        predicted_q_value2 = self.soft_q_net2(state_batch, action_batch)
+        predicted_value = self.value_net(state_batch)
+        new_action, log_prob, z, mean, log_std = self.policy_net.evaluate(state_batch)
+
+        #reward_batch = reward_scale * (reward_batch - reward_batch.mean(dim=0)) / reward_batch.std(dim=0)  # normalize with batch mean and std
+
+        # Training Q Function
+        #target_value = self.target_value_net(next_state)
+        #target_q_value = reward_batch + (1 - done) * gamma * target_value  # if done==1, only reward
+        q_value_loss1 = self.soft_q_criterion1(predicted_q_value1,
+                                          target_q_value.detach())  # detach: no gradients for the variable
+        q_value_loss2 = self.soft_q_criterion2(predicted_q_value2, target_q_value.detach())
+
+        self.soft_q_optimizer1.zero_grad()
+        q_value_loss1.backward()
+        self.soft_q_optimizer1.step()
+        self.soft_q_optimizer2.zero_grad()
+        q_value_loss2.backward()
+        self.soft_q_optimizer2.step()
+
+        # Training Value Function
+        predicted_new_q_value = torch.min(self.soft_q_net1(state_batch, new_action), self.soft_q_net2(state_batch, new_action))
+        target_value_func = predicted_new_q_value - alpha * log_prob  # for stochastic training, it equals to expectation over action
+        value_loss = self.value_criterion(predicted_value, target_value_func.detach())
+
+        self.value_optimizer.zero_grad()
+        value_loss.backward()
+        self.value_optimizer.step()
+
+        # Training Policy Function
+        ''' implementation 1 '''
+        policy_loss = (alpha * log_prob - predicted_new_q_value).mean()
+        ''' implementation 2 '''
+        # policy_loss = (alpha * log_prob - soft_q_net1(state, new_action)).mean()  # Openai Spinning Up implementation
+        ''' implementation 3 '''
+        # policy_loss = (alpha * log_prob - (predicted_new_q_value - predicted_value.detach())).mean() # max Advantage instead of Q to prevent the Q-value drifted high
+
+        ''' implementation 4 '''  # version of github/higgsfield
+        # log_prob_target=predicted_new_q_value - predicted_value
+        # policy_loss = (log_prob * (log_prob - log_prob_target).detach()).mean()
+        # mean_lambda=1e-3
+        # std_lambda=1e-3
+        # mean_loss = mean_lambda * mean.pow(2).mean()
+        # std_loss = std_lambda * log_std.pow(2).mean()
+        # policy_loss += mean_loss + std_loss
+
+        self.policy_optimizer.zero_grad()
+        self.policy_loss.backward()
+        self.policy_optimizer.step()
+
+        # print('value_loss: ', value_loss)
+        # print('q loss: ', q_value_loss1, q_value_loss2)
+        # print('policy loss: ', policy_loss )
+
+        # Soft update the target value net
+        for target_param, param in zip(self.target_value_net.parameters(), self.value_net.parameters()):
+            target_param.data.copy_(  # copy data value into target parameters
+                target_param.data * (1.0 - soft_tau) + param.data * soft_tau
+            )
+        return predicted_new_q_value.mean()
+
+
+
+
+
+
+
+
+
+
+
+#############################################################
+
+
+
 
     def add_to_replay_buffer(self, paths):
         pass

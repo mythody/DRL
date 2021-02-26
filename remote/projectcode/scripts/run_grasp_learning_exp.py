@@ -9,7 +9,7 @@ print(PACKAGE_DIR)
 
 from projectcode.infrastructure.rl_trainer import RL_Trainer
 from projectcode.agents.dqn_agent import DQNAgent
-
+from projectcode.agents.sac_agent import SACAgent
 
 
 class Q_Trainer(object):
@@ -21,7 +21,7 @@ class Q_Trainer(object):
             'LEARNING_RATE': 1e-4,
             'num_agent_train_steps_per_iter': params['num_agent_train_steps_per_iter'],
             'num_critic_updates_per_agent_update': params['num_critic_updates_per_agent_update'],
-            'train_batch_size': params['batch_size'],
+            'train_batch_size': params['BATCH_SIZE'],
             'double_q': params['double_q'],
         }
 
@@ -30,7 +30,6 @@ class Q_Trainer(object):
                     }
 
         epsilon_greedy_args = {
-            'BATCH_SIZE': 32,
             'GAMMA': 0.99,
             'EPS_START': 0.9,
             'EPS_END': 0.1,
@@ -40,14 +39,14 @@ class Q_Trainer(object):
         }
 
         self.agent_params = {**train_args, **env_args, **params, **epsilon_greedy_args} ### argsis
-        self.params['agent_class'] = DQNAgent
+        self.params['agent_class'] = SACAgent
         self.params['agent_params'] = self.agent_params
-        self.params['train_batch_size'] = params['batch_size']
+        self.params['train_batch_size'] = params['BATCH_SIZE']
 
         self.rl_trainer = RL_Trainer(self.params)
 
     def run_training_loop(self):
-        self.rl_trainer.run_training_loop(self.agent_params['num_episodes'])
+        self.rl_trainer.run_training_loop(self.agent_params['num_iterations'])
 
 def main():
 
@@ -61,23 +60,36 @@ def main():
     ###################
     ## Here are the interesting arguments
 
+    parser.add_argument('--debug_mode', type=bool, default=True)
+
     ## own params
-    parser.add_argument('--num_episodes', type=int, default=1000)
     parser.add_argument('--exp_name', type=str, default='todo')
-    parser.add_argument('--obs_type', type=str, default='BW', choices=('BW', 'RGB', 'depth', 'segmentation'))
-    parser.add_argument('--add_obs', type=str, default='t-steps', choices=('None', 'JointsState', 't-steps'))
+    parser.add_argument('--obs_type', type=str, default='RGB', choices=('BW', 'RGB', 'depth', 'segmentation'))
+    parser.add_argument('--add_obs', type=str, default='None', choices=('None', 'JointsState', 't-steps'))
     parser.add_argument('--cam_view_option', type=int, default=0) # 0: default fixed cam, 1: cam=endeffector without rotation, 2: endeffector with rotation
-    parser.add_argument('--obs_size', type=int, default=600)
+    parser.add_argument('--obs_size', type=int, default=64)
     #########################################################
+
+    #parser.add_argument('--collect_data_every_n_iterations', type=int, default=1000)
+    parser.add_argument('--num_iterations', type=int, default=10000)  #10000
+    #parser.add_argument('--n_episodes_collected_per_iteration', type=int, default=50)
+    parser.add_argument('--BATCH_SIZE', type=int, default=2) #32
+
+    parser.add_argument('--eval_every_n_iterations', type=int, default=1000) #1000
+    parser.add_argument('--n_episodes_per_eval', type=int, default=2)  #50
+    parser.add_argument('--log_loss_frequ', type=int, default=5)  #50
+
+    parser.add_argument('--on_policy', type=bool, default=True)
 
     parser.add_argument('--use_gpu', type=bool, default=True)
     parser.add_argument('--gpu_id', type=int, default=0)
 
     parser.add_argument('--MaxSteps', type=int, default=15)
     parser.add_argument('--save_params', action='store_true')
-    parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--eval_batch_size', type=int, default=20)
 
+
+    ### Unused params so far
     parser.add_argument('--num_agent_train_steps_per_iter', type=int, default=1)
     parser.add_argument('--num_critic_updates_per_agent_update', type=int, default=1)
     parser.add_argument('--double_q', action='store_true')

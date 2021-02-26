@@ -31,61 +31,6 @@ class RL_Trainer(object):
         # Get params, create logger
         self.params = params
 
-        '''
-        #self.logger = Logger(self.params['logdir'])
-
-        # Set random seeds
-        seed = self.params['seed']
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        ptu.init_gpu(
-            use_gpu=not self.params['no_gpu'],
-            gpu_id=self.params['which_gpu']
-        )
-
-        #############
-        ## ENV
-        #############
-
-        if 'env_wrappers' in self.params:
-            # These operations are currently only for Atari envs
-            self.env = wrappers.Monitor(self.env, os.path.join(self.params['logdir'], "gym"), force=True)
-            self.eval_env = wrappers.Monitor(self.eval_env, os.path.join(self.params['logdir'], "gym"), force=True)
-            self.env = params['env_wrappers'](self.env)
-            self.eval_env = params['env_wrappers'](self.eval_env)
-            self.mean_episode_reward = -float('nan')
-            self.best_mean_episode_reward = -float('inf')
-        
-        # Maximum length for episodes
-        self.params['ep_len'] = self.params['ep_len'] or self.env.spec.max_episode_steps
-        global MAX_VIDEO_LEN
-        MAX_VIDEO_LEN = self.params['ep_len']
-
-        # Is this env continuous, or self.discrete?
-        discrete = isinstance(self.env.action_space, gym.spaces.Discrete)
-        # Are the observations images?
-        img = len(self.env.observation_space.shape) > 2
-
-        self.params['agent_params']['discrete'] = discrete
-
-        # Observation and action sizes
-
-        ob_dim = self.env.observation_space.shape if img else self.env.observation_space.shape[0]
-        ac_dim = self.env.action_space.n if discrete else self.env.action_space.shape[0]
-        self.params['agent_params']['ac_dim'] = ac_dim
-        self.params['agent_params']['ob_dim'] = ob_dim
-
-        # simulation timestep, will be used for video saving
-        if 'model' in dir(self.env):
-            self.fps = 1/self.env.model.opt.timestep
-        elif 'env_wrappers' in self.params:
-            self.fps = 30 # This is not actually used when using the Monitor wrapper
-        elif 'video.frames_per_second' in self.env.env.metadata.keys():
-            self.fps = self.env.env.metadata['video.frames_per_second']
-        else:
-            self.fps = 10
-
-        '''
         img_size = self.params['obs_size']
         _maxSteps = self.params['MaxSteps']
         env = KukaDiverseObjectEnv(renders=False, isDiscrete=True, removeHeightHack=False, maxSteps=_maxSteps, width=img_size,
@@ -105,28 +50,130 @@ class RL_Trainer(object):
                           buffer_name=None,
                           initial_expertdata=None, relabel_with_expert=False,
                           start_relabel_with_expert=1, expert_policy=None):
-        num_episodes = self.agent.params['num_episodes'] #1000
+        num_iterations = self.agent.params['num_iterations'] #1000
         writer = SummaryWriter(self.params['logdir'])
-        total_rewards = []
-        ten_rewards = 0
-        best_mean_reward = None
+        summed_loss = 0
         start_time = timeit.default_timer()
-        PATH = 'policy_dqn.pt'
+
+        log_loss_frequ = self.params['log_loss_frequ']
+        n_test_episodes = self.params['n_episodes_per_eval']
+
+        for itr in range(num_iterations):
+            # Initialize the environment and state
+            if (itr % 10 == 0):
+                print("Episode: ", itr)
+            if(itr==0 and self.params['debug_mode']):
+                print("check_point")
+                state = self.agent.get_screen()
+                print("get_screen/state.shape: ", state.shape)
+                self.agent.display_screen(state)
+
+            if(itr % self.params['eval_every_n_iterations'] == 0):
+                #paths, acc_rewards = self.collect_training_trajectories()
+                print("Memory size before collecting: ", len(self.agent.memory))
+                print("Evaluating on training set ... ")
+                mean_reward_train = self.eval_agent(writer, itr, isTest=False, n_test_episodes=self.params['n_episodes_per_eval'])
+                print("Evaluating on test set ... ")
+                mean_reward_test = self.eval_agent(writer, itr, isTest=True, n_test_episodes=self.params['n_episodes_per_eval'])
+                print("Memory size after collecting: ", len(self.agent.memory))
+                print("... and go on with training")
+
+                print('Mean {dataset} score: {mean_reward}'.format(dataset='train', mean_reward=mean_reward_train))
+                print('Mean {dataset} score: {mean_reward}'.format(dataset='test', mean_reward=mean_reward_test))
+
+                if (writer is not None):
+                    writingOn = 'avg_train_reward_over_' + str(n_test_episodes) + 'episodes'
+                    writer.add_scalar(writingOn, mean_reward_train, itr)
+
+                    writingOn = 'avg_test_reward_over_' + str(n_test_episodes) + 'episodes'
+                    writer.add_scalar(writingOn, mean_reward_test, itr)
+
+            loss = self.agent.optimize_model()
+
+            if(loss is not None):
+                summed_loss += loss
+
+                # LOG
+                if(writer is not None and itr % log_loss_frequ == 0):
+                    writingOn = 'avg_loss_over_past_' + str(log_loss_frequ) + '_iterations'
+                    writer.add_scalar(writingOn, summed_loss / log_loss_frequ, itr)
+                    summed_loss = 0
+
+            if itr % self.agent.params['TARGET_UPDATE'] == 0:
+                self.agent.target_net.load_state_dict(self.agent.policy_net.state_dict())
+
+
+        final_reward = self.eval_agent(writer, itr, isTest=True, n_test_episodes=200)
+        print('Average Score: {:.2f}'.format(final_reward))
+        elapsed = timeit.default_timer() - start_time
+        print("Elapsed time: {}".format(timedelta(seconds=elapsed)))
+        writer.close()
+        print("DONE")
+
+
+    def eval_agent(self, writer=None, train_episode=0, isTest=False, n_test_episodes=50):
+        total_rewards = []
+        summed_rewards = 0
+
+        env = self.agent.env
+        env.isTest = isTest
+        STACK_SIZE = self.agent.params['STACK_SIZE']
+
+        for i_episode in range(n_test_episodes):
+            # Initialize the environment and state
+            env.reset()
+            state = self.agent.get_screen()
+            stacked_states = collections.deque(STACK_SIZE * [state], maxlen=STACK_SIZE)
+            for t in count():
+                stacked_states_t = torch.cat(tuple(stacked_states), dim=1)
+                # Select and perform an action
+                action = self.agent.select_action(stacked_states_t, i_episode)
+                _, reward, done, _ = env.step(action.item())
+                reward = torch.tensor([reward], device=self.agent.device)
+
+                # Observe new state
+                next_state = self.agent.get_screen()
+                if not done:
+                    next_stacked_states = stacked_states
+                    next_stacked_states.append(next_state)
+                    next_stacked_states_t = torch.cat(tuple(next_stacked_states), dim=1)
+                else:
+                    next_stacked_states_t = None
+
+                # Store the transition in memory
+                if(self.params['on_policy'] == True and isTest == False):
+                    self.agent.memory.push(stacked_states_t, action, next_stacked_states_t, reward)
+
+                # Move to the next state
+                stacked_states = next_stacked_states
+
+                if done:
+                    reward = reward.cpu().numpy().item()
+                    summed_rewards += reward
+                    total_rewards.append(reward)
+                    break
+
+        mean_reward = summed_rewards/n_test_episodes
+
+        env.isTest = False
+
+        return mean_reward
+
+
+    ####################################
+    ####################################
+
+    def collect_training_trajectories(self):
+        num_episodes = self.params['n_episodes_collected_per_iteration']
 
         env = self.agent.env
         STACK_SIZE = self.agent.params['STACK_SIZE']
 
         for i_episode in range(num_episodes):
-            # Initialize the environment and state
-            if (i_episode % 10 == 0):
-                print("Episode: ", i_episode)
+
             env.reset()
             state = self.agent.get_screen()
             stacked_states = collections.deque(STACK_SIZE * [state], maxlen=STACK_SIZE)
-            if(i_episode==0):
-                print("check_point")
-                print("get_screen/state.shape: ", state.shape)
-                self.agent.display_screen(state)
 
             for t in count():
                 stacked_states_t = torch.cat(tuple(stacked_states), dim=1)
@@ -153,134 +200,17 @@ class RL_Trainer(object):
 
                 # Perform one step of the optimization (on the target network)
                 #for upts in range(50):
-                self.agent.optimize_model()
+
                 if done:
                     reward = reward.cpu().numpy().item()
-                    ten_rewards += reward
-                    total_rewards.append(reward)
-                    mean_reward = np.mean(total_rewards[-100:]) * 100
+                    acc_rewards += reward
+                    #total_rewards.append(reward)
+                    #mean_reward = np.mean(total_rewards[-100:]) * 100
                     writer.add_scalar("epsilon", self.agent.eps_threshold, i_episode)
-                    if (best_mean_reward is None or best_mean_reward < mean_reward) and i_episode > 100:
-                        # For saving the model and possibly resuming training
-                        torch.save({
-                            'policy_net_state_dict': self.agent.policy_net.state_dict(),
-                            'target_net_state_dict': self.agent.target_net.state_dict(),
-                            'optimizer_policy_net_state_dict': self.agent.optimizer.state_dict()
-                        }, PATH)
-                        if best_mean_reward is not None:
-                            print(
-                                "Best mean reward updated %.1f -> %.1f, model saved" % (best_mean_reward, mean_reward))
-                        best_mean_reward = mean_reward
+
                     break
 
-            if i_episode % 100 == 0:
-                writer.add_scalar('train 10 episodes mean rewards', ten_rewards / 100.0, i_episode)
-                if(best_mean_reward is not None):
-                    writer.add_scalar('train_best_mean_reward', best_mean_reward, i_episode)
-                ten_rewards = 0
-            if i_episode % 100 == 0:
-                self.eval_agent(writer, i_episode)
-            # Update the target network, copying all weights and biases in DQN
-            if i_episode % self.agent.params['TARGET_UPDATE'] == 0:
-                self.agent.target_net.load_state_dict(self.agent.policy_net.state_dict())
-            if i_episode >= 200 and mean_reward > 50:
-                print('Environment solved in {:d} episodes!\tAverage Score: {:.2f}'.format(i_episode + 1, mean_reward))
-                break
-
-        self.eval_agent(writer, i_episode+1, n_test_episodes=100)
-        print('Average Score: {:.2f}'.format(mean_reward))
-        elapsed = timeit.default_timer() - start_time
-        print("Elapsed time: {}".format(timedelta(seconds=elapsed)))
-        writer.close()
-        env.close()
-
-
-    def eval_agent(self, writer=None, train_episode=0, n_test_episodes=50, n_iter=None, collect_policy=None, eval_policy=None,
-                          buffer_name=None,
-                          initial_expertdata=None, relabel_with_expert=False,
-                          start_relabel_with_expert=1, expert_policy=None):
-        total_rewards = []
-        summed_rewards = 0
-
-        env = self.agent.env
-        env.isTest = True
-        STACK_SIZE = self.agent.params['STACK_SIZE']
-
-        for i_episode in range(n_test_episodes):
-            # Initialize the environment and state
-            env.reset()
-            state = self.agent.get_screen()
-            stacked_states = collections.deque(STACK_SIZE * [state], maxlen=STACK_SIZE)
-            for t in count():
-                stacked_states_t = torch.cat(tuple(stacked_states), dim=1)
-                # Select and perform an action
-                action = self.agent.select_action(stacked_states_t, i_episode)
-                _, reward, done, _ = env.step(action.item())
-                reward = torch.tensor([reward], device=self.agent.device)
-
-                # Observe new state
-                next_state = self.agent.get_screen()
-                if not done:
-                    next_stacked_states = stacked_states
-                    next_stacked_states.append(next_state)
-
-                # Move to the next state
-                stacked_states = next_stacked_states
-
-                if done:
-                    reward = reward.cpu().numpy().item()
-                    summed_rewards += reward
-                    total_rewards.append(reward)
-                    break
-
-        mean_reward = summed_rewards/num_episodes
-        print('Mean test score: {:.2f}'.format(mean_reward))
-        if(writer is not None):
-            writer.add_scalar('test 100 episodes mean rewards', mean_reward, train_episode)
-            writer.close()
-        env.isTest = False
-
-
-
-
-    ####################################
-    ####################################
-
-    def collect_training_trajectories(self, itr, initial_expertdata, collect_policy, num_transitions_to_sample, save_expert_data_to_disk=False):
-        """
-        :param itr:
-        :param load_initial_expertdata:  path to expert data pkl file
-        :param collect_policy:  the current policy using which we collect data
-        :param num_transitions_to_sample:  the number of transitions we collect
-        :return:
-            paths: a list trajectories
-            envsteps_this_batch: the sum over the numbers of environment steps in paths
-            train_video_paths: paths which also contain videos for visualization purposes
-        """
-        # TODO: get this from hw1 or hw2
-        if itr == 0 and load_initial_expertdata:
-            with open(load_initial_expertdata, 'rb') as f:
-                loaded_paths = pickle.load(f)
-            return loaded_paths, 0, None
-
-        # TODO collect `batch_size` samples to be used for training
-        # HINT1: use sample_trajectories from utils
-        # HINT2: you want each of these collected rollouts to be of length self.params['ep_len']
-
-        print("\nCollecting data to be used for training...")
-        paths, envsteps_this_batch = utils.sample_trajectories(
-            self.env, collect_policy, batch_size, self.params['ep_len'])
-
-        # collect more rollouts with the same policy, to be saved as videos in tensorboard
-        # note: here, we collect MAX_NVIDEO rollouts, each of length MAX_VIDEO_LEN
-        train_video_paths = None
-        if self.log_video:
-            print('\nCollecting train rollouts to be used for saving videos...')
-            ## TODO look in utils and implement sample_n_trajectories
-            train_video_paths = utils.sample_n_trajectories(
-                self.env, collect_policy, MAX_NVIDEO, MAX_VIDEO_LEN, True)
-
-        return paths, envsteps_this_batch, train_video_paths
+        return paths, acc_rewards
 
     ####################################
     ####################################
