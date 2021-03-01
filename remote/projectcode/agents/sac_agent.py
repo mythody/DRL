@@ -5,6 +5,8 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
+import torch.nn as nn
+from torch.distributions import Normal
 
 
 from PIL import Image
@@ -66,14 +68,12 @@ class SACAgent(object):
 
 
         #### Define networks, loss, lrs, optimizers for ValueNet, soft-q-net-1, soft-q-net-1, policy-net
-        hidden_dim = 512
+        self.value_net = ValueNetwork(n_channels, screen_height, screen_width).to(self.device)
+        self.target_value_net = ValueNetwork(n_channels, screen_height, screen_width).to(self.device)
 
-        self.value_net = ValueNetwork(state_dim, hidden_dim, activation=F.relu).to(device)
-        self.target_value_net = ValueNetwork(state_dim, hidden_dim, activation=F.relu).to(device)
-
-        self.soft_q_net1 = SoftQNetwork(state_dim, action_dim, hidden_dim, activation=F.relu).to(device)
-        self.soft_q_net2 = SoftQNetwork(state_dim, action_dim, hidden_dim, activation=F.relu).to(device)
-        self.policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim, activation=F.relu).to(device)
+        self.soft_q_net1 = SoftQNetwork(n_channels, screen_height, screen_width, self.n_actions).to(self.device)
+        self.soft_q_net2 = SoftQNetwork(n_channels, screen_height, screen_width, self.n_actions).to(self.device)
+        self.policy_net = PolicyNetwork(n_channels, screen_height, screen_width, self.n_actions, self.device).to(self.device)
 
         print('(Target) Value Network: ', self.value_net)
         print('Soft Q Network (1,2): ', self.soft_q_net1)
@@ -90,12 +90,15 @@ class SACAgent(object):
         soft_q_lr = 3e-4
         policy_lr = 3e-4
 
-        self.value_optimizer = optim.Adam(value_net.parameters(), lr=value_lr)
-        self.soft_q_optimizer1 = optim.Adam(soft_q_net1.parameters(), lr=soft_q_lr)
-        self.soft_q_optimizer2 = optim.Adam(soft_q_net2.parameters(), lr=soft_q_lr)
-        self.policy_optimizer = optim.Adam(policy_net.parameters(), lr=policy_lr)
+        self.value_optimizer = optim.Adam(self.value_net.parameters(), lr=value_lr)
+        self.soft_q_optimizer1 = optim.Adam(self.soft_q_net1.parameters(), lr=soft_q_lr)
+        self.soft_q_optimizer2 = optim.Adam(self.soft_q_net2.parameters(), lr=soft_q_lr)
+        self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
 
+        self.memory = ReplayMemory(self.params['MEMORY_CAPACITY'])
+        self.eps_threshold = 0
 
+        self.action_range = 1.
 
         '''
         self.policy_net = ptu.DQN(n_channels, screen_height, screen_width, self.n_actions).to(self.device)
@@ -152,13 +155,25 @@ class SACAgent(object):
 
     eps_threshold = 0
 
-    def get_action(self, state, deterministic):
-        state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        mean, log_std = self.forward(state)
+    def select_action(self, state, i_episode, t):
+
+        global steps_done
+        global eps_threshold
+        sample = random.random()
+        self.eps_threshold = max(self.params['EPS_END'], self.params['EPS_START'] - i_episode / self.params['EPS_DECAY_LAST_FRAME'])
+
+        deterministic = False
+        if sample > self.eps_threshold:
+            deterministic = True
+
+
+        #state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        t_tensor = torch.FloatTensor([t]).to(self.device)
+        mean, log_std = self.policy_net(state, t_tensor)
         std = log_std.exp()
 
         normal = Normal(0, 1)
-        z = normal.sample(mean.shape).to(device)
+        z = normal.sample(mean.shape).to(self.device)
         action = self.action_range * torch.tanh(mean + std * z)
         action = torch.tanh(mean).detach().cpu().numpy()[0] if deterministic else action.detach().cpu().numpy()[0]
 
@@ -208,7 +223,7 @@ class SACAgent(object):
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
 
-    def optimize_model(self, reward_scale, gamma=0.99, soft_tau=1e-2):
+    def optimize_model(self, soft_tau=1e-2):
 
         batch_size = self.params['BATCH_SIZE']
 
@@ -227,10 +242,12 @@ class SACAgent(object):
         state_batch = torch.cat(batch.state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
+        time_step = torch.cat(batch.timestep)
+
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+        #state_action_values = self.policy_net(state_batch).gather(1, action_batch)
 
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
@@ -239,12 +256,11 @@ class SACAgent(object):
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(self.params['BATCH_SIZE'], device=self.device)
 
-
-
-
-
-
-        next_state_values[non_final_mask] = self.target_value_net(non_final_next_states).max(1)[0].detach()
+        masked_timestep = torch.masked_select(time_step, non_final_mask)
+        try:
+            next_state_values[non_final_mask] = self.target_value_net(non_final_next_states, masked_timestep).max(1)[0].detach()
+        except:
+            print("same errrrrror again ")
         # Compute the expected Q values
         target_q_value = (next_state_values * self.params['GAMMA']) + reward_batch # expected_state_action_values =
 
@@ -255,10 +271,10 @@ class SACAgent(object):
         #    device)  # reward is single value, unsqueeze() to add one dim to be [reward] at the sample dim;
         #done = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
 
-        predicted_q_value1 = self.soft_q_net1(state_batch, action_batch)
-        predicted_q_value2 = self.soft_q_net2(state_batch, action_batch)
-        predicted_value = self.value_net(state_batch)
-        new_action, log_prob, z, mean, log_std = self.policy_net.evaluate(state_batch)
+        predicted_q_value1 = self.soft_q_net1(state_batch, action_batch, time_step)
+        predicted_q_value2 = self.soft_q_net2(state_batch, action_batch, time_step)
+        predicted_value = self.value_net(state_batch, time_step)
+        new_action, log_prob, z, mean, log_std = self.policy_net.evaluate(state_batch, time_step)
 
         #reward_batch = reward_scale * (reward_batch - reward_batch.mean(dim=0)) / reward_batch.std(dim=0)  # normalize with batch mean and std
 
@@ -277,7 +293,7 @@ class SACAgent(object):
         self.soft_q_optimizer2.step()
 
         # Training Value Function
-        predicted_new_q_value = torch.min(self.soft_q_net1(state_batch, new_action), self.soft_q_net2(state_batch, new_action))
+        predicted_new_q_value = torch.min(self.soft_q_net1(state_batch, new_action, time_step), self.soft_q_net2(state_batch, new_action, time_step))
         target_value_func = predicted_new_q_value - alpha * log_prob  # for stochastic training, it equals to expectation over action
         value_loss = self.value_criterion(predicted_value, target_value_func.detach())
 
@@ -287,7 +303,7 @@ class SACAgent(object):
 
         # Training Policy Function
         ''' implementation 1 '''
-        policy_loss = (alpha * log_prob - predicted_new_q_value).mean()
+        self.policy_loss = (alpha * log_prob - predicted_new_q_value).mean()
         ''' implementation 2 '''
         # policy_loss = (alpha * log_prob - soft_q_net1(state, new_action)).mean()  # Openai Spinning Up implementation
         ''' implementation 3 '''

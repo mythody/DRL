@@ -11,6 +11,7 @@ from projectcode.envs.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
 from projectcode.infrastructure.utils import *
 import pybullet as p
 import matplotlib.pyplot as plt
+from datetime import timedelta
 
 import collections
 
@@ -99,8 +100,8 @@ class RL_Trainer(object):
                     writer.add_scalar(writingOn, summed_loss / log_loss_frequ, itr)
                     summed_loss = 0
 
-            if itr % self.agent.params['TARGET_UPDATE'] == 0:
-                self.agent.target_net.load_state_dict(self.agent.policy_net.state_dict())
+            #if itr % self.agent.params['TARGET_UPDATE'] == 0:
+            #    self.agent.target_net.load_state_dict(self.agent.policy_net.state_dict())
 
 
         final_reward = self.eval_agent(writer, itr, isTest=True, n_test_episodes=200)
@@ -127,8 +128,8 @@ class RL_Trainer(object):
             for t in count():
                 stacked_states_t = torch.cat(tuple(stacked_states), dim=1)
                 # Select and perform an action
-                action = self.agent.select_action(stacked_states_t, i_episode)
-                _, reward, done, _ = env.step(action.item())
+                action = self.agent.select_action(stacked_states_t, i_episode, t)
+                _, reward, done, _ = env._step_continuous(action)
                 reward = torch.tensor([reward], device=self.agent.device)
 
                 # Observe new state
@@ -142,7 +143,7 @@ class RL_Trainer(object):
 
                 # Store the transition in memory
                 if(self.params['on_policy'] == True and isTest == False):
-                    self.agent.memory.push(stacked_states_t, action, next_stacked_states_t, reward)
+                    self.agent.memory.push(stacked_states_t, torch.tensor([action], device=self.agent.device), next_stacked_states_t, reward, torch.tensor([t], device=self.agent.device))
 
                 # Move to the next state
                 stacked_states = next_stacked_states

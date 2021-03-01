@@ -20,7 +20,7 @@ class ReplayMemory(object):
         self.memory = []
         self.position = 0
         self.Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
+                        ('state', 'action', 'next_state', 'reward', 'timestep'))
 
     def push(self, *args):
         """Saves a transition."""

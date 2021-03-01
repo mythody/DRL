@@ -4,13 +4,15 @@ import torch
 from torch import nn
 
 import torch.nn.functional as F
+from torch.distributions import Normal
 
+import numpy as np
 
 # architecture from Levine paper:
 class SoftQNetwork(nn.Module):
-    def __init__(self,h, w, num_actions):
+    def __init__(self,c, h, w, num_actions):
         super(SoftQNetwork,self).__init__()
-        self.in_channels = 3
+        self.in_channels = c
         self.out_channels = [32,32,32]
         self.kernel_sizes = [4,3,3]
         self.strides = [2,2,2]
@@ -25,12 +27,31 @@ class SoftQNetwork(nn.Module):
             #nn.BatchNorm2d(out_channels[2])
             nn.ReLU()
         )
+
+
+        # Number of Linear input connections depends on output of conv2d layers
+        # and therefore the input image size, so compute it.
+        def conv2d_size_out(size, kernel_size = 5, stride = 2):
+            return (size - (kernel_size - 1) - 1) // stride  + 1
+        convw = conv2d_size_out(
+                    conv2d_size_out(
+                        conv2d_size_out(w,self.kernel_sizes[0],self.strides[0]),
+                        self.kernel_sizes[1],self.strides[1]),
+                    self.kernel_sizes[2],self.strides[2])
+        convh = conv2d_size_out(
+                    conv2d_size_out(
+                        conv2d_size_out(h,self.kernel_sizes[0],self.strides[0]),
+                        self.kernel_sizes[1],self.strides[1]),
+                    self.kernel_sizes[2],self.strides[2])
+        linear_input_size = convw * convh * (self.out_channels[2] + 1)
+
+
         self.actionFC = nn.Sequential(
             nn.Linear(num_actions,33),
             nn.ReLU()
         )
         self.finishFC = nn.Sequential(
-            nn.Linear(1617,32),
+            nn.Linear(linear_input_size,32),
             nn.Linear(32,32),
             nn.Linear(32,1)
         )
@@ -60,9 +81,9 @@ class SoftQNetwork(nn.Module):
 
 
 class ValueNetwork(nn.Module):
-    def __init__(self,h, w, num_actions):
+    def __init__(self,c, h, w):
         super(ValueNetwork,self).__init__()
-        self.in_channels = 3
+        self.in_channels = c
         self.out_channels = [32,32,32]
         self.kernel_sizes = [4,3,3]
         self.strides = [2,2,2]
@@ -78,8 +99,27 @@ class ValueNetwork(nn.Module):
             nn.ReLU()
         )
 
+
+        # Number of Linear input connections depends on output of conv2d layers
+        # and therefore the input image size, so compute it.
+        def conv2d_size_out(size, kernel_size = 5, stride = 2):
+            return (size - (kernel_size - 1) - 1) // stride  + 1
+        convw = conv2d_size_out(
+                    conv2d_size_out(
+                        conv2d_size_out(w,self.kernel_sizes[0],self.strides[0]),
+                        self.kernel_sizes[1],self.strides[1]),
+                    self.kernel_sizes[2],self.strides[2])
+        convh = conv2d_size_out(
+                    conv2d_size_out(
+                        conv2d_size_out(h,self.kernel_sizes[0],self.strides[0]),
+                        self.kernel_sizes[1],self.strides[1]),
+                    self.kernel_sizes[2],self.strides[2])
+        linear_input_size = convw * convh * (self.out_channels[2] + 1)
+
+
+
         self.finishFC = nn.Sequential(
-            nn.Linear(1617,32),
+            nn.Linear(linear_input_size,32),
             nn.Linear(32,32),
             nn.Linear(32,1)
         )
@@ -88,28 +128,35 @@ class ValueNetwork(nn.Module):
     def forward(self, image, timestep):
         timestep=timestep.unsqueeze(1)
         convolution_output = self.convolution(image)
-        time_tiled = torch.repeat_interleave(timestep,49,dim=0).reshape((timestep.shape[0],1,7,7))
+        time_tiled = torch.repeat_interleave(timestep,49,dim=0).reshape((convolution_output.shape[0],1,7,7))
+
         state_output = torch.cat((time_tiled,convolution_output),dim=1)
 
-        state_action = torch.add(state_output,action_output)
-        state_action_flat = torch.flatten(state_action,start_dim=1)
-        q = self.finishFC(state_action_flat)
 
-        return q
+        state_output_flat = torch.flatten(state_output,start_dim=1)
+        v = self.finishFC(state_output_flat)
 
-
+        return v
 
 
 
 
 
-class ValueNetwork(nn.Module):
-    def __init__(self,h, w, num_actions):
-        super(ValueNetwork,self).__init__()
-        self.in_channels = 3
+
+
+class PolicyNetwork(nn.Module):
+    def __init__(self,c, h, w, num_actions, device, init_w=3e-3, log_std_min=-20, log_std_max=2):
+        super(PolicyNetwork,self).__init__()
+        self.in_channels = c
         self.out_channels = [32,32,32]
         self.kernel_sizes = [4,3,3]
         self.strides = [2,2,2]
+        self.device = device
+        self.action_range = 1.0
+
+        self.log_std_min = log_std_min
+        self.log_std_max = log_std_max
+
         self.convolution = nn.Sequential(
             nn.Conv2d(in_channels=self.in_channels, out_channels=self.out_channels[0], kernel_size=self.kernel_sizes[0], stride=self.strides[0]),
             #nn.BatchNorm2d(out_channels[0])
@@ -122,27 +169,76 @@ class ValueNetwork(nn.Module):
             nn.ReLU()
         )
 
+
+        # Number of Linear input connections depends on output of conv2d layers
+        # and therefore the input image size, so compute it.
+        def conv2d_size_out(size, kernel_size = 5, stride = 2):
+            return (size - (kernel_size - 1) - 1) // stride  + 1
+        convw = conv2d_size_out(
+                    conv2d_size_out(
+                        conv2d_size_out(w,self.kernel_sizes[0],self.strides[0]),
+                        self.kernel_sizes[1],self.strides[1]),
+                    self.kernel_sizes[2],self.strides[2])
+        convh = conv2d_size_out(
+                    conv2d_size_out(
+                        conv2d_size_out(h,self.kernel_sizes[0],self.strides[0]),
+                        self.kernel_sizes[1],self.strides[1]),
+                    self.kernel_sizes[2],self.strides[2])
+        linear_input_size = convw * convh * (self.out_channels[2] + 1)
+
+        self.mean_linear = nn.Linear(32,num_actions)
+        self.mean_linear.weight.data.uniform_(-init_w, init_w)
+        self.mean_linear.bias.data.uniform_(-init_w, init_w)
+
+        self.log_std_linear = nn.Linear(32,num_actions)
+        self.log_std_linear.weight.data.uniform_(-init_w, init_w)
+        self.log_std_linear.bias.data.uniform_(-init_w, init_w)
+
         self.finishFC = nn.Sequential(
-            nn.Linear(1617,32),
-            nn.Linear(32,32),
-            nn.Linear(32,1)
+            nn.Linear(linear_input_size,32),
+            nn.Linear(32,32)
         )
 
 
     def forward(self, image, timestep):
         timestep=timestep.unsqueeze(1)
         convolution_output = self.convolution(image)
-        time_tiled = torch.repeat_interleave(timestep,49,dim=0).reshape((timestep.shape[0],1,7,7))
+        total_size = 7*7
+        time_tiled = torch.repeat_interleave(timestep,total_size,dim=1).reshape(convolution_output.shape[0],1,7,7)
         state_output = torch.cat((time_tiled,convolution_output),dim=1)
 
-        state_action = torch.add(state_output,action_output)
-        state_action_flat = torch.flatten(state_action,start_dim=1)
-        q = self.finishFC(state_action_flat)
+        state_output_flat = torch.flatten(state_output,start_dim=1)
+        a = self.finishFC(state_output_flat)
+        a_mean = self.mean_linear(a)
+        a_log_std = self.log_std_linear(a)
+        a_log_std = torch.clamp(a_log_std, self.log_std_min, self.log_std_max)
 
-        return q
+        return a_mean, a_log_std
 
+    def evaluate(self, state, timestep, epsilon=1e-6):
+        '''
+        generate sampled action with state as input wrt the policy network;
+        deterministic evaluation provides better performance according to the original paper;
+        '''
+        mean, log_std = self.forward(state, timestep)
+        std = log_std.exp()  # no clip in evaluation, clip affects gradients flow
 
-
+        normal = Normal(0, 1)
+        z = normal.sample(mean.shape)
+        action_0 = torch.tanh(mean + std * z.to(self.device))  # TanhNormal distribution as actions; reparameterization trick
+        action = self.action_range * action_0
+        ''' stochastic evaluation '''
+        log_prob = Normal(mean, std).log_prob(mean + std * z.to(self.device)) - torch.log(
+            1. - action_0.pow(2) + epsilon) - np.log(self.action_range)
+        ''' deterministic evaluation '''
+        # log_prob = Normal(mean, std).log_prob(mean) - torch.log(1. - torch.tanh(mean).pow(2) + epsilon) -  np.log(self.action_range)
+        '''
+         both dims of normal.log_prob and -log(1-a**2) are (N,dim_of_action); 
+         the Normal.log_prob outputs the same dim of input features instead of 1 dim probability, 
+         needs sum up across the features dim to get 1 dim prob; or else use Multivariate Normal.
+         '''
+        log_prob = log_prob.sum(dim=-1, keepdim=True)
+        return action, log_prob, z, mean, log_std
 
 
 

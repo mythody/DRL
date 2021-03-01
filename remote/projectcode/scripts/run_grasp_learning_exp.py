@@ -71,12 +71,12 @@ def main():
     #########################################################
 
     #parser.add_argument('--collect_data_every_n_iterations', type=int, default=1000)
-    parser.add_argument('--num_iterations', type=int, default=10000)  #10000
+    parser.add_argument('--num_iterations', type=int, default=100000)  #10000
     #parser.add_argument('--n_episodes_collected_per_iteration', type=int, default=50)
-    parser.add_argument('--BATCH_SIZE', type=int, default=2) #32
+    parser.add_argument('--BATCH_SIZE', type=int, default=32) #32
 
     parser.add_argument('--eval_every_n_iterations', type=int, default=1000) #1000
-    parser.add_argument('--n_episodes_per_eval', type=int, default=2)  #50
+    parser.add_argument('--n_episodes_per_eval', type=int, default=50)  #50
     parser.add_argument('--log_loss_frequ', type=int, default=5)  #50
 
     parser.add_argument('--on_policy', type=bool, default=True)
