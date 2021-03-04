@@ -26,7 +26,7 @@ class Q_Trainer(object):
         }
 
         env_args = {'STACK_SIZE': 1,
-                    'MEMORY_CAPACITY': 1000,
+                    'MEMORY_CAPACITY': 10000,
                     }
 
         epsilon_greedy_args = {
@@ -64,22 +64,24 @@ def main():
 
     ## own params
     parser.add_argument('--exp_name', type=str, default='todo')
-    parser.add_argument('--obs_type', type=str, default='RGB', choices=('BW', 'RGB', 'depth', 'segmentation'))
+    parser.add_argument('--obs_type', type=str, default=['RGB', 'depth'], choices=('BW', 'RGB', 'depth', 'segmentation'))
     parser.add_argument('--add_obs', type=str, default='None', choices=('None', 'JointsState', 't-steps'))
     parser.add_argument('--cam_view_option', type=int, default=0) # 0: default fixed cam, 1: cam=endeffector without rotation, 2: endeffector with rotation
     parser.add_argument('--obs_size', type=int, default=64)
     #########################################################
 
     #parser.add_argument('--collect_data_every_n_iterations', type=int, default=1000)
-    parser.add_argument('--num_iterations', type=int, default=100000)  #10000
+    parser.add_argument('--num_iterations', type=int, default=500000)  #10000
     #parser.add_argument('--n_episodes_collected_per_iteration', type=int, default=50)
     parser.add_argument('--BATCH_SIZE', type=int, default=32) #32
 
     parser.add_argument('--eval_every_n_iterations', type=int, default=1000) #1000
-    parser.add_argument('--n_episodes_per_eval', type=int, default=50)  #50
-    parser.add_argument('--log_loss_frequ', type=int, default=5)  #50
+    parser.add_argument('--n_episodes_per_eval', type=int, default=20)  #50
+    parser.add_argument('--log_loss_frequ', type=int, default=50)  #50
 
-    parser.add_argument('--on_policy', type=bool, default=True)
+    parser.add_argument('--on_policy', type=bool, default=False)
+    parser.add_argument('--initial_memory', type=bool, default=False)
+    parser.add_argument('--initial_memory_path', type=str, default='todo')
 
     parser.add_argument('--use_gpu', type=bool, default=True)
     parser.add_argument('--gpu_id', type=int, default=0)
@@ -123,6 +125,9 @@ def main():
         os.makedirs(logdir)
 
     print("\n\n\nLOGGING TO: ", logdir, "\n\n\n")
+    print("Initial_memory INITIAL: ", params['initial_memory'])
+
+
 
     trainer = Q_Trainer(params)
     trainer.run_training_loop()

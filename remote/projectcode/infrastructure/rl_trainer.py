@@ -34,7 +34,7 @@ class RL_Trainer(object):
 
         img_size = self.params['obs_size']
         _maxSteps = self.params['MaxSteps']
-        env = KukaDiverseObjectEnv(renders=False, isDiscrete=True, removeHeightHack=False, maxSteps=_maxSteps, width=img_size,
+        env = KukaDiverseObjectEnv(renders=False, isDiscrete=False, removeHeightHack=False, maxSteps=_maxSteps, width=img_size,
                                    height=img_size)
         env._cam_view_option = self.params['cam_view_option']
         env.cid = p.connect(p.DIRECT)
@@ -129,8 +129,9 @@ class RL_Trainer(object):
                 stacked_states_t = torch.cat(tuple(stacked_states), dim=1)
                 # Select and perform an action
                 action = self.agent.select_action(stacked_states_t, i_episode, t)
-                _, reward, done, _ = env._step_continuous(action)
-                reward = torch.tensor([reward], device=self.agent.device)
+                action_ext = np.append(action, 0.0)
+                _, reward, done, _ = env._step_continuous(action_ext)
+                reward = torch.tensor([reward], dtype=torch.float32, device=self.agent.device)
 
                 # Observe new state
                 next_state = self.agent.get_screen()
@@ -143,8 +144,9 @@ class RL_Trainer(object):
 
                 # Store the transition in memory
                 if(self.params['on_policy'] == True and isTest == False):
-                    self.agent.memory.push(stacked_states_t, torch.tensor([action], device=self.agent.device), next_stacked_states_t, reward, torch.tensor([t], device=self.agent.device))
-
+                    self.agent.memory.push(stacked_states_t, torch.tensor([action], device=self.agent.device), next_stacked_states_t, reward, torch.tensor([t], dtype=torch.float32, device=self.agent.device))
+                    #print("imgRGB.shape when pushed during online: ", stacked_states_t.shape)
+                    #print("action.shape when pushed during online: ", torch.tensor([action], device=self.agent.device).shape)
                 # Move to the next state
                 stacked_states = next_stacked_states
 

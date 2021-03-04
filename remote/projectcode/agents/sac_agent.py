@@ -62,7 +62,7 @@ class SACAgent(object):
             print("n_actions: ", env.action_space.n)
             print(type(env.action_space.n))
         else:
-            self.n_actions = 5 #env.action_space.high.size
+            self.n_actions = 4 #env.action_space.high.size #-1 because we do not control gripper-closeness
             print("n_actions: ", env.action_space.high.size)
             print(type(env.action_space.high.size))
 
@@ -95,7 +95,14 @@ class SACAgent(object):
         self.soft_q_optimizer2 = optim.Adam(self.soft_q_net2.parameters(), lr=soft_q_lr)
         self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
 
-        self.memory = ReplayMemory(self.params['MEMORY_CAPACITY'])
+        self.memory = ReplayMemory(self.params['MEMORY_CAPACITY'], device=self.device)
+        print("Initial_memory: ", self.params['initial_memory'])
+        if(self.params['initial_memory']):
+            # Load memory data
+            print("Initial Memmory Path: ", self.params['initial_memory_path'])
+            print("cam view: ", self.params['cam_view_option'])
+            self.memory.load_memory(memory_path=self.params['initial_memory_path'])
+
         self.eps_threshold = 0
 
         self.action_range = 1.
@@ -120,7 +127,15 @@ class SACAgent(object):
         global stacked_screens
         # Returned screen requested by gym is 400x600x3, but is sometimes larger
         # such as 800x1200x3. Transpose it into torch order (CHW).
-        screen = self.env._get_observation(self.params['obs_type']).transpose((2, 0, 1))
+
+        #screen = self.env._get_observation(self.params['obs_type']).transpose((2, 0, 1))
+        if(isinstance(self.params['obs_type'], list)):
+            screen = self.env._get_observation(self.params['obs_type'][0]).transpose((2, 0, 1))
+            for i in range(1, len(self.params['obs_type']) ):
+                screen_i = self.env._get_observation(self.params['obs_type'][i]).transpose((2, 0, 1))
+                screen = np.concatenate((screen, screen_i))
+        else:
+            screen = self.env._get_observation(self.params['obs_type']).transpose((2, 0, 1))
         # Convert to float, rescale, convert to torch tensor
         # (this doesn't require a copy)
 
@@ -179,49 +194,6 @@ class SACAgent(object):
 
         return action
 
-    def optimize_model_dqn(self):
-        if len(self.memory) < self.params['BATCH_SIZE']:
-            return
-        transitions = self.memory.sample(self.params['BATCH_SIZE'])
-        # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-        # detailed explanation). This converts batch-array of Transitions
-        # to Transition of batch-arrays.
-        batch = self.memory.Transition(*zip(*transitions))
-
-        # Compute a mask of non-final states and concatenate the batch elements
-        # (a final state would've been the one after which simulation ended)
-        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                                batch.next_state)), device=self.device, dtype=torch.bool)
-        non_final_next_states = torch.cat([s for s in batch.next_state
-                                           if s is not None])
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
-
-        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-        # columns of actions taken. These are the actions which would've been taken
-        # for each batch state according to policy_net
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
-
-        # Compute V(s_{t+1}) for all next states.
-        # Expected values of actions for non_final_next_states are computed based
-        # on the "older" target_net; selecting their best reward with max(1)[0].
-        # This is merged based on the mask, such that we'll have either the expected
-        # state value or 0 in case the state was final.
-        next_state_values = torch.zeros(self.params['BATCH_SIZE'], device=self.device)
-        next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].detach()
-        # Compute the expected Q values
-        expected_state_action_values = (next_state_values * self.params['GAMMA']) + reward_batch
-
-        # Compute Huber loss
-        loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
-
-        # Optimize the model
-        self.optimizer.zero_grad()
-        loss.backward()
-        for param in self.policy_net.parameters():
-            param.grad.data.clamp_(-1, 1)
-        self.optimizer.step()
 
     def optimize_model(self, soft_tau=1e-2):
 
@@ -331,7 +303,7 @@ class SACAgent(object):
             target_param.data.copy_(  # copy data value into target parameters
                 target_param.data * (1.0 - soft_tau) + param.data * soft_tau
             )
-        return predicted_new_q_value.mean()
+        return q_value_loss1
 
 
 

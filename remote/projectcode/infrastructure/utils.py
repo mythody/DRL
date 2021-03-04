@@ -1,26 +1,34 @@
 import numpy as np
 import time
 import copy
-
+import pickle
 
 import random
 from collections import namedtuple
-
-
+import gc
+import torch
 
 ##########
 # utils from colab-version
 ###########################
 
+CamImgIndDict = {'0': (0,4), #img has index 0, nextimg index 4
+                '1': (1,5),
+                 '2': (2,6)}
+ImgChannelDict = {'RGB': slice(0,3),
+                  'depth': 4,
+                  'segment':5
+}
 
 class ReplayMemory(object):
 
-    def __init__(self, capacity):
+    def __init__(self, capacity, device):
         self.capacity = capacity
         self.memory = []
         self.position = 0
         self.Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward', 'timestep'))
+        self.device = device
 
     def push(self, *args):
         """Saves a transition."""
@@ -35,8 +43,59 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
 
+    def setToNewMemory(self,newMemory):
+        self.capacity = len(newMemory)
+        self.memory = newMemory
+        self.position = 0
+
+    def load_memory(self, memory_path, ReplaBufferSize = 10000):
+        ## uncomment to use replayBuffer
+        REPLAY_BUFFER_PATH = memory_path #root / 'randomPolicy'
+        #print(REPLAY_BUFFER_PATH.exists())
+        # REPLAY_BUFFER_PATH = '/randomPolicy'
+        print('Loading replay buffer...')
+        ReplaBuffer = []
+        for i in range(ReplaBufferSize // 5000):
+            print('iteration = ' + str(i))
+            bufferNumber = 5000 * (i + 1)
+            replayBufferFileName = REPLAY_BUFFER_PATH + '/replayBuffer_' + str(bufferNumber) + '.data'
+            # replayBufferFileName = REPLAY_BUFFER_PATH+'/replayBuffer_'+str(bufferNumber)+'.data'
+            ReplaBuffer.extend(pickle.load(open(replayBufferFileName, "rb")))
+        print('Replay buffer is loaded')
+
+        print('Reshaping the Replay Buffer')
+        RB = []
+        for rbi in range(len(ReplaBuffer)):
+            #print(str(rbi) + ' out of ' + str(len(ReplaBuffer) - 1))
+            imgRGB = ReplaBuffer[rbi][0].squeeze(0).squeeze(0)[:3].unsqueeze(0)
+            action = ReplaBuffer[rbi][3][:4]
+            if ReplaBuffer[rbi][4] is not None:
+                nextImgRGB = ReplaBuffer[rbi][4].squeeze(0).squeeze(0)[:3].unsqueeze(0)
+            else:
+                nextImgRGB = None
+
+            imgRGB = torch.tensor(imgRGB, dtype=torch.float32, device=self.device)
+
+            if(nextImgRGB is not None):
+                nextImgRGB = torch.tensor(nextImgRGB, dtype=torch.float32, device=self.device)
+            reward = ReplaBuffer[rbi][7]
+            tStep = ReplaBuffer[rbi][8]
+            action = torch.tensor([np.asarray(action)], dtype=torch.float32, device=self.device)
+            reward = torch.tensor([reward], dtype=torch.float32, device=self.device)
+            tStep = torch.tensor([tStep], dtype=torch.float32, device=self.device)
+
+            if(rbi==0):
+                print("imgRGB load shape: ", imgRGB.shape)
+                print("action load shape: ", action.shape)
+            RB.append(self.Transition(imgRGB, action, nextImgRGB, reward, tStep))
 
 
+        ReplaBuffer.clear()
+        del (ReplaBuffer)
+        gc.collect()
+
+        #memory = ReplayMemory(len(RB))
+        self.setToNewMemory(RB)
 
 
 
